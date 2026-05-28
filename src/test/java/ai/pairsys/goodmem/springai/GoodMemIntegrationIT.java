@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ai.goodmem.springai;
+package ai.pairsys.goodmem.springai;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

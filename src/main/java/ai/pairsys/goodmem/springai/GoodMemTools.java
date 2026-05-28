@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ai.goodmem.springai;
+package ai.pairsys.goodmem.springai;
 
 import java.util.LinkedHashMap;
 import java.util.List;

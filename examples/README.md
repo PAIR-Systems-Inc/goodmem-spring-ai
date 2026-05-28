@@ -1,6 +1,6 @@
 # Spring AI GoodMem example
 
-End-to-end demo that drives [`GoodMemTools`](../src/main/java/ai/goodmem/springai/GoodMemTools.java)
+End-to-end demo that drives [`GoodMemTools`](../src/main/java/ai/pairsys/goodmem/springai/GoodMemTools.java)
 from a Spring AI `ChatClient`. Three scenarios cover the integration's common
 usage patterns:
 
@@ -17,7 +17,7 @@ usage patterns:
    so the LLM only sees the category being asked about.
 
 The example lives in
-[`GoodMemExampleIT`](../src/test/java/ai/goodmem/springai/GoodMemExampleIT.java).
+[`GoodMemExampleIT`](../src/test/java/ai/pairsys/goodmem/springai/GoodMemExampleIT.java).
 
 ## Prerequisites
 

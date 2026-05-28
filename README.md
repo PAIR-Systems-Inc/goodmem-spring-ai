@@ -1,4 +1,4 @@
-# spring-ai-goodmem
+# goodmem-spring-ai
 
 [GoodMem](https://goodmem.ai) integration for [Spring AI](https://docs.spring.io/spring-ai/reference/).
 
@@ -14,8 +14,8 @@ running GoodMem server.
 
 ```xml
 <dependency>
-    <groupId>ai.goodmem</groupId>
-    <artifactId>spring-ai-goodmem</artifactId>
+    <groupId>io.github.bashareid</groupId>
+    <artifactId>goodmem-spring-ai</artifactId>
     <version>0.1.0</version>
 </dependency>
 ```
@@ -25,8 +25,8 @@ Spring AI 1.0 or later is required and must be on the classpath.
 ## Quickstart
 
 ```java
-import ai.goodmem.springai.GoodMemClient;
-import ai.goodmem.springai.GoodMemTools;
+import ai.pairsys.goodmem.springai.GoodMemClient;
+import ai.pairsys.goodmem.springai.GoodMemTools;
 import org.springframework.ai.chat.client.ChatClient;
 
 GoodMemClient client = GoodMemClient.builder()

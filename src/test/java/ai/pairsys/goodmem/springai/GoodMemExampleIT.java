@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ai.goodmem.springai;
+package ai.pairsys.goodmem.springai;
 
 import java.time.Duration;
 import java.util.List;
@@ -98,9 +98,9 @@ class GoodMemExampleIT {
 		this.chatModel = OpenAiChatModel.builder().openAiApi(openAiApi).defaultOptions(options).build();
 
 		this.embedderId = firstEmbedderId();
-		this.spaceId = createSpace("spring-ai-goodmem-example");
-		this.teamSpaceId = createSpace("spring-ai-goodmem-example-team");
-		this.taggedSpaceId = createSpace("spring-ai-goodmem-example-tagged");
+		this.spaceId = createSpace("goodmem-spring-ai-example");
+		this.teamSpaceId = createSpace("goodmem-spring-ai-example-team");
+		this.taggedSpaceId = createSpace("goodmem-spring-ai-example-tagged");
 	}
 
 	private String firstEmbedderId() {

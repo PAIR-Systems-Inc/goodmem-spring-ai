@@ -5,7 +5,7 @@ name: Publish to Maven Central
 # `central-publishing-maven-plugin` (activated by the `release` profile).
 #
 # One-time setup on Maven Central:
-#   1. Claim the `ai.goodmem` namespace on https://central.sonatype.com.
+#   1. Claim the `io.github.bashareid` namespace on https://central.sonatype.com.
 #   2. Generate a portal user token (User Account -> Generate User Token) and
 #      store it in repository secrets as CENTRAL_USERNAME and CENTRAL_PASSWORD.
 #   3. Generate a GPG key for signing, export the private key, and store it as
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: maven-central
-      url: https://central.sonatype.com/artifact/ai.goodmem/spring-ai-goodmem
+      url: https://central.sonatype.com/artifact/io.github.bashareid/goodmem-spring-ai
     steps:
       - uses: actions/checkout@v4
 

@@ -20,6 +20,6 @@
  * {@code ChatClient} or agent.
  */
 @NullMarked
-package ai.goodmem.springai;
+package ai.pairsys.goodmem.springai;
 
 import org.jspecify.annotations.NullMarked;

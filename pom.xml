@@ -4,15 +4,20 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ai.goodmem</groupId>
-    <artifactId>spring-ai-goodmem</artifactId>
+    <groupId>io.github.bashareid</groupId>
+    <artifactId>goodmem-spring-ai</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
 
-    <name>Spring AI GoodMem</name>
+    <name>Spring AI :: Integration :: GoodMem</name>
     <description>Spring AI plugin for GoodMem, a retrieval-augmented generation (RAG) memory service.</description>
-    <url>https://github.com/PAIR-Systems-Inc/goodmem_spring-ai</url>
+    <url>https://github.com/PAIR-Systems-Inc/goodmem-spring-ai</url>
     <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>PAIR Systems, Inc.</name>
+        <url>https://pairsys.ai</url>
+    </organization>
 
     <licenses>
         <license>
@@ -31,14 +36,14 @@
     </developers>
 
     <scm>
-        <url>https://github.com/PAIR-Systems-Inc/goodmem_spring-ai</url>
-        <connection>scm:git:git://github.com/PAIR-Systems-Inc/goodmem_spring-ai.git</connection>
-        <developerConnection>scm:git:ssh://git@github.com/PAIR-Systems-Inc/goodmem_spring-ai.git</developerConnection>
+        <url>https://github.com/PAIR-Systems-Inc/goodmem-spring-ai</url>
+        <connection>scm:git:git://github.com/PAIR-Systems-Inc/goodmem-spring-ai.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/PAIR-Systems-Inc/goodmem-spring-ai.git</developerConnection>
     </scm>
 
     <issueManagement>
         <system>GitHub</system>
-        <url>https://github.com/PAIR-Systems-Inc/goodmem_spring-ai/issues</url>
+        <url>https://github.com/PAIR-Systems-Inc/goodmem-spring-ai/issues</url>
     </issueManagement>
 
     <properties>
@@ -200,7 +205,7 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.6.0</version>
+                        <version>0.10.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
