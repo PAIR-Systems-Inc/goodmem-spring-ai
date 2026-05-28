@@ -1,21 +1,5 @@
 name: Publish to Maven Central
 
-# Builds the jar on every push and PR, and publishes to Maven Central when a
-# `v*` git tag is pushed. Publishing uses the Sonatype Central Portal via the
-# `central-publishing-maven-plugin` (activated by the `release` profile).
-#
-# One-time setup on Maven Central:
-#   1. Claim the `io.github.bashareid` namespace on https://central.sonatype.com.
-#   2. Generate a portal user token (User Account -> Generate User Token) and
-#      store it in repository secrets as CENTRAL_USERNAME and CENTRAL_PASSWORD.
-#   3. Generate a GPG key for signing, export the private key, and store it as
-#      GPG_PRIVATE_KEY (ASCII-armored) and GPG_PASSPHRASE.
-#
-# Release procedure:
-#   1. Bump `<version>` in pom.xml.
-#   2. Commit and tag, for example `git tag v0.1.0 && git push --tags`.
-#   3. This workflow runs the `publish` job and uploads the signed artifacts.
-
 on:
   push:
     branches: [main]
