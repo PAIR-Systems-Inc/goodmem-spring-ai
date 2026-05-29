@@ -14,7 +14,7 @@ running GoodMem server.
 
 ```xml
 <dependency>
-    <groupId>io.github.bashareid</groupId>
+    <groupId>ai.pairsys</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
     <version>0.1.0</version>
 </dependency>

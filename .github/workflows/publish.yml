@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: maven-central
-      url: https://central.sonatype.com/artifact/io.github.bashareid/goodmem-spring-ai
+      url: https://central.sonatype.com/artifact/ai.pairsys/goodmem-spring-ai
     steps:
       - uses: actions/checkout@v4
 
