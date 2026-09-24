@@ -72,6 +72,7 @@ Each returned `Document` has the chunk text, the memory's metadata, and:
 | `goodmem_memory_id`, `goodmem_chunk_id`, `goodmem_space_id` | where the text came from |
 | `goodmem_score_kind` | `vector` or `reranker` |
 | `goodmem_raw_score` | the server's value, before any adjustment |
+| `source` | the memory's `originalContentRef` when it has one, else its id — for citations |
 
 `Document.getScore()` is higher-is-better. A GoodMem vector score is a negative inner
 product (the best match is the lowest number), so it is negated. A reranker score is
@@ -98,8 +99,8 @@ String reply = ChatClient.builder(chatModel).build()
     .content();
 ```
 
-The model supplies only `query` and, optionally, `topK`. Spaces, reranker and filter
-stay with the developer. The tool never fails on a server-reported status; it returns
+The tool is called **`goodmem_search`**; the model supplies only `query` and,
+optionally, `topK`. Spaces, reranker and filter stay with the developer. The tool never fails on a server-reported status; it returns
 `partial` and `statuses` alongside `results`.
 
 ### Reranking
@@ -156,6 +157,9 @@ outside that directory.
 GoodMemUploadTool upload = new GoodMemUploadTool(connection, Path.of("/srv/agent-uploads"));
 ```
 
+The tool is called **`goodmem_upload_file`** and takes `spaceId`, `fileName` and
+optional `metadata`.
+
 ## Connection settings
 
 | setting | default | notes |
@@ -196,6 +200,10 @@ GOODMEM_EMBEDDER_ID=your-embedder-uuid \
 GOODMEM_VERIFY_SSL=false \
   ./mvnw -B verify                     # also runs the live tests; they delete what they create
 ```
+
+CI runs the same `verify` on JDK 21, plus two gates: no committed GoodMem API key
+(`gm_` followed by 20+ alphanumerics as a whole token), and no call disabling TLS
+verification in this README or in `examples/` — the quickstart must not teach it.
 
 The offline tests drive the real SDK over a WireMock server, with event shapes captured
 from a live GoodMem v1.0.320 (`src/test/resources/retrieve_real.ndjson`). Nothing in the
