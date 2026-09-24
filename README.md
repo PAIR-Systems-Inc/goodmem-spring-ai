@@ -1,143 +1,214 @@
 # goodmem-spring-ai
 
-[GoodMem](https://goodmem.ai) integration for [Spring AI](https://docs.spring.io/spring-ai/reference/).
+A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-GoodMem gives AI agents retrieval-augmented generation (RAG) memory. Store
-documents in a space and GoodMem chunks, embeds, and indexes them so your
-agent can pull back the most relevant passages on any question.
+> **Status — 0.2.0 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
+> 28 offline tests drive the real SDK over a mock server; 9 live tests run against a
+> GoodMem server. Not yet on Maven Central; install from source (below).
 
-This package exposes the GoodMem API as Spring AI tools. Register them with
-a `ChatClient` and the model can store, retrieve, and inspect memories on a
-running GoodMem server.
+GoodMem gives agents retrieval-augmented memory: text goes in, GoodMem chunks and
+embeds it server-side, and semantic search brings the relevant passages back. This
+connector plugs that into Spring AI three ways:
+
+- **`GoodMemDocumentRetriever`** — a Spring AI `DocumentRetriever`, for
+  `RetrievalAugmentationAdvisor` and any RAG pipeline that takes one.
+- **`GoodMemSearchTool`** — one `@Tool` an agent can call; the model supplies a query.
+- **`GoodMemAdminTools`** and **`GoodMemUploadTool`** — management and file upload, for
+  agents that are meant to administer GoodMem.
 
 ## Installation
 
+Not yet published. Build and install locally:
+
+```bash
+./mvnw -B install -DskipTests
+```
+
 ```xml
 <dependency>
-    <groupId>ai.pairsys</groupId>
+    <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
-Spring AI 1.0 or later is required and must be on the classpath.
+Requires **Java 21+** (the GoodMem Java SDK is compiled for 21), Spring AI 1.0.0
+(`spring-ai-model` and `spring-ai-rag` are `provided`; your application already has
+them) and a GoodMem server.
 
-## Quickstart
+## Quickstart: RAG with a DocumentRetriever
 
 ```java
-import ai.pairsys.goodmem.springai.GoodMemClient;
-import ai.pairsys.goodmem.springai.GoodMemTools;
+import ai.pairsys.goodmem.springai.GoodMemConnection;
+import ai.pairsys.goodmem.springai.GoodMemDocumentRetriever;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.RetrievalAugmentationAdvisor;
 
-GoodMemClient client = GoodMemClient.builder()
-    .baseUrl(System.getenv("GOODMEM_BASE_URL"))
+GoodMemConnection connection = GoodMemConnection.builder()
+    .baseUrl("https://goodmem.example.com:8080")
     .apiKey(System.getenv("GOODMEM_API_KEY"))
-    .verifySsl(false) // self-signed cert in local dev
     .build();
 
-GoodMemTools tools = new GoodMemTools(client);
+GoodMemDocumentRetriever retriever = GoodMemDocumentRetriever.builder()
+    .connection(connection)
+    .spaceId("your-space-uuid")   // the developer decides what is searched
+    .topK(5)
+    .build();
 
-String reply = ChatClient.builder(chatModel)
-    .defaultSystem("You have access to a GoodMem semantic memory store. "
-        + "Use the goodmem tools to store facts the user shares and to "
-        + "retrieve them when answering questions.")
-    .build()
+String answer = ChatClient.builder(chatModel).build()
     .prompt()
-    .user("What was our Q2 launch deadline again?")
-    .tools(tools)
+    .advisors(RetrievalAugmentationAdvisor.builder().documentRetriever(retriever).build())
+    .user("When does payroll run?")
     .call()
     .content();
 ```
 
-Every tool returns a `Map<String, Object>` with `success: true` and
-operation-specific fields on success, or `success: false` and an `error`
-field on failure.
+Each returned `Document` has the chunk text, the memory's metadata, and:
 
-## Available tools
-
-| Tool | Description |
+| metadata key | meaning |
 |---|---|
-| `goodmem_list_embedders` | List embedder models available on the server |
-| `goodmem_list_spaces` | List all spaces accessible to the API key |
-| `goodmem_get_space` | Fetch a space by UUID |
-| `goodmem_create_space` | Create a space (idempotent by name) |
-| `goodmem_update_space` | Update a space's name, labels, or public-read flag |
-| `goodmem_delete_space` | Delete a space and all of its memories |
-| `goodmem_create_memory` | Store text or a file as a memory |
-| `goodmem_list_memories` | List memories in a space, with pagination and filters |
-| `goodmem_retrieve_memories` | Semantic retrieval across one or more spaces |
-| `goodmem_get_memory` | Fetch a memory by ID, with optional content |
-| `goodmem_delete_memory` | Delete a memory |
+| `goodmem_partial` | `true` when the server reported a problem with this search |
+| `goodmem_statuses` | the statuses it reported, when any |
+| `goodmem_memory_id`, `goodmem_chunk_id`, `goodmem_space_id` | where the text came from |
+| `goodmem_score_kind` | `vector` or `reranker` |
+| `goodmem_raw_score` | the server's value, before any adjustment |
+| `source` | the memory's `originalContentRef` when it has one, else its id — for citations |
 
-### Retrieval options
+`Document.getScore()` is higher-is-better. A GoodMem vector score is a negative inner
+product (the best match is the lowest number), so it is negated. A reranker score is
+passed through unchanged; its range is provider-dependent (Voyage rerank-2.5 returns
+roughly `0.27..0.93`, Jina v3 `-0.14..0.43`), so do not assume 0–1 when choosing a
+threshold.
 
-`goodmem_retrieve_memories` accepts the following parameters in addition to
-`query` and `spaceIds`:
+**Incomplete results are reported, never hidden.** If the server reports a problem
+(a reranker that failed, a space that could not be searched, a code this SDK does not
+know yet), the results still come back with `goodmem_partial=true` and the statuses.
+A search that reported a problem and found nothing returns an empty list and logs a
+warning; it does not throw.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `maxResults` | `Integer` | Maximum number of matching chunks (default 5) |
-| `includeMemoryDefinition` | `Boolean` | Include full memory metadata alongside the matched chunks |
-| `waitForIndexing` | `Boolean` | Poll for results when none come back on the first call |
-| `rerankerId` | `String` | Reranker model to refine result ordering |
-| `llmId` | `String` | LLM that generates a contextual `abstractReply` |
-| `relevanceThreshold` | `Double` | Minimum score (0..1) for inclusion |
-| `llmTemperature` | `Double` | Creativity (0..2) for the LLM post-processor |
-| `chronologicalResort` | `Boolean` | Reorder results by creation time |
-
-A `metadata_filter` parameter is available on the lower-level
-`GoodMemClient.retrieveMemories(...)` Java API for narrowing results by a
-SQL-style JSONPath expression applied server-side. Example:
-`CAST(val('$.category') AS TEXT) = 'feat'`.
-
-## Environment variables
-
-| Variable | Description |
-|---|---|
-| `GOODMEM_BASE_URL` | Base URL of the GoodMem API server (default `https://localhost:8080`) |
-| `GOODMEM_API_KEY` | API key sent as the `X-API-Key` header |
-| `GOODMEM_VERIFY_SSL` | Set to `false` to skip TLS verification (default `true`) |
-
-## End-to-end example
-
-[`examples/README.md`](examples/README.md) walks through a runnable end-to-end
-demo that drives three scenarios from a Spring AI `ChatClient`: persistent
-project context, a scribe and analyst pipeline, and metadata-driven
-retrieval. The answering step uses OpenAI; set `OPENAI_API_KEY` before
-running.
-
-## Direct (non-tool) usage
-
-`GoodMemClient` is framework-agnostic and can be called directly when you do
-not need a chat model in the loop:
+## Give an agent a search tool
 
 ```java
-GoodMemClient client = GoodMemClient.builder()
-    .baseUrl("https://localhost:8080")
-    .apiKey("your-api-key")
-    .verifySsl(false)
-    .build();
+GoodMemSearchTool search = new GoodMemSearchTool(retriever);
 
-var space = client.createSpace("knowledge-base", embedderId, "recursive", 512, 50);
-var memory = client.createMemory(
-    space.get("spaceId").toString(),
-    "Spring AI is a framework for AI applications.",
-    null,
-    null);
-var matches = client.retrieveMemories(
-    "Java AI framework",
-    space.get("spaceId").toString(),
-    5, true, true, null, null, null, null, null);
+String reply = ChatClient.builder(chatModel).build()
+    .prompt()
+    .tools(search)
+    .user("What do we know about the Q3 offsite?")
+    .call()
+    .content();
 ```
 
-## Compatibility
+The tool is called **`goodmem_search`**; the model supplies only `query` and,
+optionally, `topK`. Spaces, reranker and filter stay with the developer. The tool never fails on a server-reported status; it returns
+`partial` and `statuses` alongside `results`.
 
-| Requirement | Notes |
+### Reranking
+
+```java
+GoodMemDocumentRetriever.builder()
+    .connection(connection)
+    .spaceId("...")
+    .rerankerId("your-reranker-uuid")
+    .build();
+```
+
+### Metadata filters
+
+Filters are GoodMem expressions evaluated server-side. Build them with
+`GoodMemFilters` rather than by string interpolation — it uses the escaping and casts
+the server actually accepts, verified live: a value with an apostrophe is a value, not
+syntax; numbers use `NUMERIC`; booleans use `BOOLEAN` (a boolean compared as text is
+accepted by the server and matches nothing).
+
+```java
+String filter = GoodMemFilters.allOf(
+    GoodMemFilters.textEquals("team", "finance"),
+    GoodMemFilters.compare("year", ">=", 2026));
+
+GoodMemDocumentRetriever.builder().connection(connection).spaceId("...").filter(filter).build();
+```
+
+## Administration tools
+
+`GoodMemAdminTools` carries the API key's full authority — a model holding it can
+delete spaces — so give it only to agents that administer GoodMem:
+
+| tool | what it does |
 |---|---|
-| Java 17 or later | Built and tested on JDK 21 |
-| Spring AI 1.0 or later | Required for the `@Tool` / `ToolParam` annotations |
-| Jackson 2.x | Used for JSON request/response serialization |
+| `goodmem_create_space` | creates a space, or reuses one of the same name **only if its embedder matches** |
+| `goodmem_list_spaces`, `goodmem_get_space`, `goodmem_delete_space` | |
+| `goodmem_create_memory` | stores text and **waits for indexing**, so a search right after finds it |
+| `goodmem_list_memories`, `goodmem_get_memory`, `goodmem_delete_memory` | listings follow pagination internally |
+| `goodmem_list_embedders` | |
+
+```java
+GoodMemAdminTools admin = new GoodMemAdminTools(connection);           // waits up to 60s for indexing
+GoodMemAdminTools quick = new GoodMemAdminTools(connection, false, Duration.ZERO, 200);
+```
+
+### Uploading files
+
+The model never names a path. `GoodMemUploadTool` takes a directory you choose and a
+file name relative to it, and refuses anything — including a symlink — that resolves
+outside that directory.
+
+```java
+GoodMemUploadTool upload = new GoodMemUploadTool(connection, Path.of("/srv/agent-uploads"));
+```
+
+The tool is called **`goodmem_upload_file`** and takes `spaceId`, `fileName` and
+optional `metadata`.
+
+## Connection settings
+
+| setting | default | notes |
+|---|---|---|
+| `baseUrl` | — | required |
+| `apiKey` | — | required; sent as the `x-api-key` header, never in a URL or log |
+| `timeout` | 30s | per request |
+| `verifySsl` | `true` | Setting it to `false` disables certificate checks for **this connection only**, for a local server with a self-signed certificate. Not for production, and deliberately absent from the quickstart. |
+
+You can also hand in an SDK client you configured yourself with
+`GoodMemConnection.of(goodmemClient)`; it stays yours and is never closed here.
+
+## Migrating from 0.1.0
+
+0.1.0's `GoodMemClient` and `GoodMemTools` are gone. Every change below was
+reproduced live before it was made; see `CHANGELOG.md`.
+
+| 0.1.0 | 0.2.0 |
+|---|---|
+| `GoodMemClient.builder()…` | `GoodMemConnection.builder()…` |
+| `new GoodMemTools(client)` — eleven tools in one object | `new GoodMemSearchTool(retriever)` for reading; `GoodMemAdminTools` and `GoodMemUploadTool` opt-in |
+| `goodmem_retrieve_memories(query, spaceIds, maxResults, includeMemoryDefinition, waitForIndexing, rerankerId, llmId, relevanceThreshold, llmTemperature, chronologicalResort)` | `goodmem_search(query, topK)` — everything else is configured on the retriever |
+| `goodmem_create_memory(spaceId, textContent, filePath, …)` | `goodmem_create_memory(spaceId, text, metadata)`; files via `GoodMemUploadTool` |
+| `goodmem_update_space(…, publicRead, …)` | removed — the server rejects `publicRead` with 400; labels can be edited through the SDK |
+| results as `results[]` + `memories[]` joined by `memoryIndex` | one entry per chunk with its memory's metadata attached |
+| `relevanceScore` raw (negative for vector search) | `score` higher-is-better; raw value kept |
+
+## Development
+
+These are the commands CI runs.
+
+```bash
+./mvnw -B verify                       # JDK 21+; 28 offline tests, the 9 live ones skip without credentials
+
+GOODMEM_BASE_URL=https://localhost:8080 \
+GOODMEM_API_KEY=gm_... \
+GOODMEM_EMBEDDER_ID=your-embedder-uuid \
+GOODMEM_VERIFY_SSL=false \
+  ./mvnw -B verify                     # also runs the live tests; they delete what they create
+```
+
+CI runs the same `verify` on JDK 21, plus two gates: no committed GoodMem API key
+(`gm_` followed by 20+ alphanumerics as a whole token), and no call disabling TLS
+verification in this README or in `examples/` — the quickstart must not teach it.
+
+The offline tests drive the real SDK over a WireMock server, with event shapes captured
+from a live GoodMem v1.0.320 (`src/test/resources/retrieve_real.ndjson`). Nothing in the
+connector or the SDK is stubbed.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0.

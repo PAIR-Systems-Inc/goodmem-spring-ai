@@ -6,7 +6,7 @@
 
     <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <packaging>jar</packaging>
 
     <name>Spring AI :: Integration :: GoodMem</name>
@@ -49,11 +49,12 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!-- ai.pairsys:goodmem-java is compiled for Java 21 (class-file 65); the floor follows it. -->
+        <maven.compiler.release>21</maven.compiler.release>
 
         <spring-ai.version>1.0.0</spring-ai.version>
-        <jackson.version>2.17.2</jackson.version>
+        <goodmem-java.version>0.2.2</goodmem-java.version>
+        <wiremock.version>3.13.1</wiremock.version>
         <slf4j.version>2.0.16</slf4j.version>
         <jspecify.version>1.0.0</jspecify.version>
 
@@ -69,10 +70,19 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- DocumentRetriever lives here; a Spring AI application already has it. -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-rag</artifactId>
+            <version>${spring-ai.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- The official GoodMem SDK: transport, NDJSON streaming, pagination, typed errors. -->
+        <dependency>
+            <groupId>ai.pairsys</groupId>
+            <artifactId>goodmem-java</artifactId>
+            <version>${goodmem-java.version}</version>
         </dependency>
 
         <dependency>
@@ -109,6 +119,13 @@
         </dependency>
 
         <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+            <version>${wiremock.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-openai</artifactId>
             <version>${spring-ai.version}</version>
@@ -122,6 +139,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+                <configuration>
+                    <!-- Spring AI derives @Tool parameter names and JSON schema from the real names. -->
+                    <parameters>true</parameters>
+                </configuration>
             </plugin>
 
             <plugin>
