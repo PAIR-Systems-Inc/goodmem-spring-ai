@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Build, unit tests, package
+        # The live tests (*IT.java) skip themselves without GOODMEM_API_KEY.
+        # That is also the check that no credential is baked into the tree.
+        run: ./mvnw -B --no-transfer-progress verify
+      - name: No GoodMem API key in the tree
+        run: |
+          if grep -rInE 'gm_[a-z0-9]{20,}' --exclude-dir=.git --exclude-dir=target .; then
+            echo "::error::a GoodMem API key is committed in this repository"
+            exit 1
+          fi
+          echo "clean"
+      - name: No TLS bypass on by default
+        # 0.1.0 shipped verifySsl(false) in its README quickstart.
+        run: |
+          if grep -rnE 'verifySsl\(false\)' README.md examples/ 2>/dev/null; then
+            echo "::error::verifySsl(false) must not appear in the documented quickstart"
+            exit 1
+          fi
+          echo "clean"
