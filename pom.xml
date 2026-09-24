@@ -49,8 +49,8 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!-- ai.pairsys:goodmem-java is compiled for Java 21 (class-file 65); the floor follows it. -->
+        <maven.compiler.release>21</maven.compiler.release>
 
         <spring-ai.version>1.0.0</spring-ai.version>
         <goodmem-java.version>0.2.2</goodmem-java.version>

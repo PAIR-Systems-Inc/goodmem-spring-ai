@@ -32,8 +32,9 @@ Not yet published. Build and install locally:
 </dependency>
 ```
 
-Requires Java 17+, Spring AI 1.0.0 (`spring-ai-model` and `spring-ai-rag` are
-`provided`; your application already has them) and a GoodMem server.
+Requires **Java 21+** (the GoodMem Java SDK is compiled for 21), Spring AI 1.0.0
+(`spring-ai-model` and `spring-ai-rag` are `provided`; your application already has
+them) and a GoodMem server.
 
 ## Quickstart: RAG with a DocumentRetriever
 
@@ -187,7 +188,7 @@ reproduced live before it was made; see `CHANGELOG.md`.
 These are the commands CI runs.
 
 ```bash
-./mvnw -B verify                       # 28 offline tests; the 9 live ones skip without credentials
+./mvnw -B verify                       # JDK 21+; 28 offline tests, the 9 live ones skip without credentials
 
 GOODMEM_BASE_URL=https://localhost:8080 \
 GOODMEM_API_KEY=gm_... \

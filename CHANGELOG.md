@@ -43,7 +43,9 @@ connector's own compiled classes, not by reading the source.
 ### Changed
 
 - Built on the official `ai.pairsys:goodmem-java` SDK (0.2.2) instead of a
-  hand-written `HttpClient` wrapper.
+  hand-written `HttpClient` wrapper. **The Java floor moves from 17 to 21**: the
+  SDK is compiled for 21 and a JDK 17 build fails with "class file has wrong
+  version 65.0" — found by CI, not locally, where only JDK 21 was installed.
 - `GoodMemDocumentRetriever` implements Spring AI's `DocumentRetriever`, so GoodMem
   plugs into `RetrievalAugmentationAdvisor` — the connector had no native retrieval
   surface before.
