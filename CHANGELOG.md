@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.2.1
+
+### Security
+
+- **An id could leave its URL path and hit another resource.** The GoodMem Java SDK
+  builds paths such as `"/v1/memories/" + id` and OkHttp resolves `..` and `%2e%2e`
+  before sending, so on 0.2.0, against a local server recording every request:
+  `goodmem_delete_memory("../spaces/<uuid>")` sent `DELETE /v1/spaces/<uuid>` and
+  returned `success: true`; `goodmem_delete_space("../embedders/<uuid>")` sent
+  `DELETE /v1/embedders/<uuid>`; `goodmem_get_memory` and `goodmem_list_memories` were
+  redirected the same way; `..%2Fspaces%2F<uuid>` went out with its `%2F` intact, leaving
+  the outcome to the server. Every id (`spaceId`, `memoryId`, `embedderId`, the
+  retriever's `spaceId` and `rerankerId`, and the id the server returns before
+  `goodmem_create_memory` polls it) must now be a canonical UUID, lower-cased, checked
+  by one validator before any request is made. Tools refuse with `success=false` and an
+  error naming the argument; `GoodMemDocumentRetriever.Builder.build()` throws
+  `IllegalArgumentException`. Ids that only travel in a request body are checked too.
+- `goodmem_create_space`'s `embedderId` is now described to the model as a UUID, like
+  the other id arguments.
+
+### Tests
+
+- `GoodMemIdPathTraversalTests`: every id-taking entry point (10) against 14 traversal
+  and malformed ids, asserting the refusal and that a recording JDK HTTP server received
+  nothing; a valid UUID, in either case, reaches exactly the intended path. One more
+  case sends the traversal through Spring AI's own `ToolCallback.call`, as a model's
+  tool call arrives; on 0.2.0 it sent `DELETE /v1/spaces/<uuid>` and replied
+  `{"success":true,...}`. On 0.2.0 all 140 refusal cases fail. Existing tests that used
+  `m-1` and `r-1` as ids now use UUIDs. 194 offline tests.
+
+### Documentation
+
+- The README quickstart imported `RetrievalAugmentationAdvisor` from
+  `org.springframework.ai.chat.client.advisor`, where Spring AI 1.0.0 has no such class;
+  compiling the snippet failed with `cannot find symbol`. It now imports
+  `org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor`. Every Java snippet
+  in the README was compiled against the installed jar and run against a local mock
+  server: the quickstart sends one retrieve and the advisor puts the retrieved text in
+  the prompt; the search-tool snippet offers the model `goodmem_search(query, topK)`.
+- The README said the connector was not on Maven Central; 0.2.0 is. It now says 0.2.1
+  is unreleased and 0.2.0 lacks the id check.
+- The README described the CI key gate as matching "20+ alphanumerics as a whole
+  token"; the regex matches lowercase letters and digits only, anywhere in a line.
+- `GoodMemUploadTool`'s directory must already exist; the README now says so.
+- `ReadmeTests` resolves every class the README's Java snippets import and checks every
+  tool name it gives against the `@Tool` names; on the previous README it fails on the
+  advisor import. 196 offline tests.
+
 ## 0.2.0
 
 Audit release. Every defect below was reproduced against the `v0.1.0` tag
