@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.1
+
+### Security
+
+- **An id could leave its URL path and hit another resource.** The GoodMem Java SDK
+  builds paths such as `"/v1/memories/" + id` and OkHttp resolves `..` and `%2e%2e`
+  before sending, so on 0.2.0, against a local server recording every request:
+  `goodmem_delete_memory("../spaces/<uuid>")` sent `DELETE /v1/spaces/<uuid>` and
+  returned `success: true`; `goodmem_delete_space("../embedders/<uuid>")` sent
+  `DELETE /v1/embedders/<uuid>`; `goodmem_get_memory` and `goodmem_list_memories` were
+  redirected the same way; `..%2Fspaces%2F<uuid>` went out with its `%2F` intact, leaving
+  the outcome to the server. Every id (`spaceId`, `memoryId`, `embedderId`, the
+  retriever's `spaceId` and `rerankerId`, and the id the server returns before
+  `goodmem_create_memory` polls it) must now be a canonical UUID, lower-cased, checked
+  by one validator before any request is made. Tools refuse with `success=false` and an
+  error naming the argument; `GoodMemDocumentRetriever.Builder.build()` throws
+  `IllegalArgumentException`. Ids that only travel in a request body are checked too.
+- `goodmem_create_space`'s `embedderId` is now described to the model as a UUID, like
+  the other id arguments.
+
+### Tests
+
+- `GoodMemIdPathTraversalTests`: every id-taking entry point (10) against 14 traversal
+  and malformed ids, asserting the refusal and that a recording JDK HTTP server received
+  nothing; a valid UUID, in either case, reaches exactly the intended path. One more
+  case sends the traversal through Spring AI's own `ToolCallback.call`, as a model's
+  tool call arrives; on 0.2.0 it sent `DELETE /v1/spaces/<uuid>` and replied
+  `{"success":true,...}`. On 0.2.0 all 140 refusal cases fail. Existing tests that used
+  `m-1` and `r-1` as ids now use UUIDs. 194 offline tests.
+
 ## 0.2.0
 
 Audit release. Every defect below was reproduced against the `v0.1.0` tag

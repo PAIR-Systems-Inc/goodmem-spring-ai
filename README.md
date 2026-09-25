@@ -2,8 +2,8 @@
 
 A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-> **Status — 0.2.0 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
-> 28 offline tests drive the real SDK over a mock server; 9 live tests run against a
+> **Status — 0.2.1 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
+> 194 offline tests drive the real SDK over a mock server; 9 live tests run against a
 > GoodMem server. Not yet on Maven Central; install from source (below).
 
 GoodMem gives agents retrieval-augmented memory: text goes in, GoodMem chunks and
@@ -28,7 +28,7 @@ Not yet published. Build and install locally:
 <dependency>
     <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
 </dependency>
 ```
 
@@ -142,6 +142,13 @@ delete spaces — so give it only to agents that administer GoodMem:
 | `goodmem_list_memories`, `goodmem_get_memory`, `goodmem_delete_memory` | listings follow pagination internally |
 | `goodmem_list_embedders` | |
 
+Every id argument (`spaceId`, `memoryId`, `embedderId`) must be a UUID. Anything else
+is refused with `success=false` before any request is made, because the SDK puts ids
+into URL paths and resolves `..` in them: in 0.2.0, `goodmem_delete_memory` given
+`../spaces/<uuid>` sent `DELETE /v1/spaces/<uuid>` and reported success. The same check
+applies to the retriever's `spaceId` and `rerankerId`, where `build()` throws
+`IllegalArgumentException`.
+
 ```java
 GoodMemAdminTools admin = new GoodMemAdminTools(connection);           // waits up to 60s for indexing
 GoodMemAdminTools quick = new GoodMemAdminTools(connection, false, Duration.ZERO, 200);
@@ -157,8 +164,8 @@ outside that directory.
 GoodMemUploadTool upload = new GoodMemUploadTool(connection, Path.of("/srv/agent-uploads"));
 ```
 
-The tool is called **`goodmem_upload_file`** and takes `spaceId`, `fileName` and
-optional `metadata`.
+The tool is called **`goodmem_upload_file`** and takes `spaceId` (a UUID), `fileName`
+and optional `metadata`.
 
 ## Connection settings
 
@@ -192,7 +199,7 @@ reproduced live before it was made; see `CHANGELOG.md`.
 These are the commands CI runs.
 
 ```bash
-./mvnw -B verify                       # JDK 21+; 28 offline tests, the 9 live ones skip without credentials
+./mvnw -B verify                       # JDK 21+; 194 offline tests, the 9 live ones skip without credentials
 
 GOODMEM_BASE_URL=https://localhost:8080 \
 GOODMEM_API_KEY=gm_... \
@@ -207,7 +214,10 @@ verification in this README or in `examples/` — the quickstart must not teach 
 
 The offline tests drive the real SDK over a WireMock server, with event shapes captured
 from a live GoodMem v1.0.320 (`src/test/resources/retrieve_real.ndjson`). Nothing in the
-connector or the SDK is stubbed.
+connector or the SDK is stubbed. `GoodMemIdPathTraversalTests` sends every id-taking
+entry point fourteen traversal and malformed ids (`../spaces/<uuid>`, `%2e%2e/…`,
+`<uuid>?x=1`, …) against a plain JDK HTTP server that records each request line as it
+arrived, and asserts that nothing reaches it.
 
 ## License
 

@@ -62,6 +62,12 @@ import org.springframework.util.Assert;
  * memory creation waits for indexing instead of searches polling for a minute; listings
  * follow pagination internally instead of handing the model a {@code nextToken}; a
  * memory's content comes back in one request; and the {@code filePath} argument is gone.
+ *
+ * <p>
+ * Every id argument must be a UUID. It is checked before any request is made, because
+ * the SDK puts ids into URL paths and resolves {@code ..} in them: in 0.2.0
+ * {@code goodmem_delete_memory("../spaces/<uuid>")} sent {@code DELETE /v1/spaces/<uuid>}
+ * and reported success. Anything else returns {@code success=false} naming the argument.
  */
 public class GoodMemAdminTools {
 
@@ -110,20 +116,21 @@ public class GoodMemAdminTools {
 			description = "Create a GoodMem space, or reuse an existing space of the same name if it uses the same embedder. A space is a container for memories, indexed by one embedder that cannot be changed later.")
 	public Map<String, Object> createSpace(@ToolParam(description = "A unique name for the space.") String name,
 			@ToolParam(
-					description = "The ID of the embedder the space is indexed with. Use goodmem_list_embedders to find one.") String embedderId,
+					description = "The UUID of the embedder the space is indexed with. Use goodmem_list_embedders to find one.") String embedderId,
 			@ToolParam(required = false,
 					description = "Maximum chunk size in characters. Defaults to 512.") @Nullable Integer chunkSize,
 			@ToolParam(required = false,
 					description = "Overlap between consecutive chunks in characters. Defaults to 64.") @Nullable Integer chunkOverlap) {
 		try {
+			String embedder = GoodMemIds.requireUuid(embedderId, "embedderId");
 			Space existing = findSpaceByName(name);
 			if (existing != null) {
 				List<String> embedders = embedderIds(existing);
-				if (!embedders.contains(embedderId)) {
+				if (!embedders.contains(embedder)) {
 					Map<String, Object> result = new LinkedHashMap<>();
 					result.put("success", false);
 					result.put("error", "A space named '" + name + "' exists but is indexed by embedder(s) " + embedders
-							+ ", not " + embedderId
+							+ ", not " + embedder
 							+ ". An embedder cannot be changed after creation; use that embedder or another name.");
 					result.put("spaceId", existing.spaceId().value());
 					return result;
@@ -134,7 +141,7 @@ public class GoodMemAdminTools {
 			int overlap = (chunkOverlap != null) ? chunkOverlap : DEFAULT_CHUNK_OVERLAP;
 			SpaceCreationRequest request = SpaceCreationRequest.builder()
 				.name(name)
-				.spaceEmbedders(List.of(new SpaceEmbedderConfig(new EmbedderId(embedderId), 1.0)))
+				.spaceEmbedders(List.of(new SpaceEmbedderConfig(new EmbedderId(embedder), 1.0)))
 				.defaultChunkingConfig(ChunkingConfiguration.recursive(RecursiveChunkingConfiguration.builder()
 					.chunkSize(size)
 					.chunkOverlap(overlap)
@@ -143,6 +150,10 @@ public class GoodMemAdminTools {
 					.build()))
 				.build();
 			return spaceResult(client().spaces.create(request), false);
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_create_space refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_create_space failed: {}", ex.getMessage());
@@ -176,10 +187,15 @@ public class GoodMemAdminTools {
 			description = "Fetch a GoodMem space by ID, including its embedders, chunking configuration and labels.")
 	public Map<String, Object> getSpace(@ToolParam(description = "The UUID of the space.") String spaceId) {
 		try {
+			String id = GoodMemIds.requireUuid(spaceId, "spaceId");
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
-			result.put("space", spaceSummary(client().spaces.get(spaceId)));
+			result.put("space", spaceSummary(client().spaces.get(id)));
 			return result;
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_get_space refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_get_space failed: {}", ex.getMessage());
@@ -191,11 +207,16 @@ public class GoodMemAdminTools {
 			description = "Permanently delete a GoodMem space and every memory in it.")
 	public Map<String, Object> deleteSpace(@ToolParam(description = "The UUID of the space to delete.") String spaceId) {
 		try {
-			client().spaces.delete(spaceId);
+			String id = GoodMemIds.requireUuid(spaceId, "spaceId");
+			client().spaces.delete(id);
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
-			result.put("spaceId", spaceId);
+			result.put("spaceId", id);
 			return result;
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_delete_space refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_delete_space failed: {}", ex.getMessage());
@@ -213,8 +234,9 @@ public class GoodMemAdminTools {
 			@ToolParam(required = false,
 					description = "Optional metadata as a flat JSON object of string values, e.g. {\"source\":\"meeting\"}.") @Nullable Map<String, Object> metadata) {
 		try {
+			String space = GoodMemIds.requireUuid(spaceId, "spaceId");
 			JsonMemoryCreationRequest.Builder request = JsonMemoryCreationRequest.builder()
-				.spaceId(spaceId)
+				.spaceId(space)
 				.originalContent(text)
 				.contentType("text/plain");
 			if (metadata != null && !metadata.isEmpty()) {
@@ -225,7 +247,7 @@ public class GoodMemAdminTools {
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
 			result.put("memoryId", memoryId);
-			result.put("spaceId", spaceId);
+			result.put("spaceId", space);
 			if (this.waitForIndexing) {
 				result.put("status", waitForIndexing(memoryId));
 			}
@@ -233,6 +255,10 @@ public class GoodMemAdminTools {
 				result.put("status", String.valueOf(memory.processingStatus()));
 			}
 			return result;
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_create_memory refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_create_memory failed: {}", ex.getMessage());
@@ -243,8 +269,9 @@ public class GoodMemAdminTools {
 	@Tool(name = "goodmem_list_memories", description = "List the memories in a GoodMem space.")
 	public Map<String, Object> listMemories(@ToolParam(description = "The UUID of the space.") String spaceId) {
 		try {
+			String id = GoodMemIds.requireUuid(spaceId, "spaceId");
 			List<Map<String, Object>> memories = new ArrayList<>();
-			Page<Memory> page = client().memories.list(spaceId);
+			Page<Memory> page = client().memories.list(id);
 			outer: while (true) {
 				for (Memory memory : page.items()) {
 					memories.add(memorySummary(memory));
@@ -259,10 +286,14 @@ public class GoodMemAdminTools {
 			}
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
-			result.put("spaceId", spaceId);
+			result.put("spaceId", id);
 			result.put("memories", memories);
 			result.put("totalMemories", memories.size());
 			return result;
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_list_memories refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_list_memories failed: {}", ex.getMessage());
@@ -274,7 +305,8 @@ public class GoodMemAdminTools {
 			description = "Fetch a GoodMem memory by ID: its metadata, processing status and, for text, its content.")
 	public Map<String, Object> getMemory(@ToolParam(description = "The UUID of the memory.") String memoryId) {
 		try {
-			Memory memory = client().memories.get(memoryId, MemoryGetOptions.builder().includeContent(true).build());
+			String id = GoodMemIds.requireUuid(memoryId, "memoryId");
+			Memory memory = client().memories.get(id, MemoryGetOptions.builder().includeContent(true).build());
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
 			result.put("memory", memorySummary(memory));
@@ -290,6 +322,10 @@ public class GoodMemAdminTools {
 			}
 			return result;
 		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_get_memory refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
+		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_get_memory failed: {}", ex.getMessage());
 			return GoodMemSearchTool.failure(ex);
@@ -299,11 +335,16 @@ public class GoodMemAdminTools {
 	@Tool(name = "goodmem_delete_memory", description = "Permanently delete a GoodMem memory.")
 	public Map<String, Object> deleteMemory(@ToolParam(description = "The UUID of the memory to delete.") String memoryId) {
 		try {
-			client().memories.delete(memoryId);
+			String id = GoodMemIds.requireUuid(memoryId, "memoryId");
+			client().memories.delete(id);
 			Map<String, Object> result = new LinkedHashMap<>();
 			result.put("success", true);
-			result.put("memoryId", memoryId);
+			result.put("memoryId", id);
 			return result;
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("goodmem_delete_memory refused: {}", ex.getMessage());
+			return GoodMemSearchTool.invalidInput(ex);
 		}
 		catch (GoodmemException ex) {
 			logger.warn("goodmem_delete_memory failed: {}", ex.getMessage());
@@ -381,19 +422,33 @@ public class GoodMemAdminTools {
 		return ids;
 	}
 
+	/**
+	 * Poll a memory the server just created. Its id came from the server, not the caller,
+	 * but it goes into a URL path all the same, so it passes the same check; one that is
+	 * not a UUID is not polled. The memory was written either way, so this reports rather
+	 * than fails.
+	 */
 	String waitForIndexing(String memoryId) {
+		String id;
+		try {
+			id = GoodMemIds.requireUuid(memoryId, "memoryId");
+		}
+		catch (GoodMemIds.InvalidIdException ex) {
+			logger.warn("The server returned a memoryId that is not a UUID; it was not polled");
+			return "UNKNOWN (not polled: the server returned a memoryId that is not a UUID)";
+		}
 		long deadline = System.nanoTime() + this.indexingTimeout.toNanos();
 		String last = "PENDING";
 		while (true) {
-			Memory memory = client().memories.get(memoryId);
+			Memory memory = client().memories.get(id);
 			MemoryProcessingStatus status = memory.processingStatus();
 			last = String.valueOf(status);
 			if (status == MemoryProcessingStatus.COMPLETED || status == MemoryProcessingStatus.FAILED) {
 				return last;
 			}
 			if (System.nanoTime() >= deadline) {
-				logger.warn("Memory {} was still {} after {}; it was written and may not be searchable yet",
-						memoryId, last, this.indexingTimeout);
+				logger.warn("Memory {} was still {} after {}; it was written and may not be searchable yet", id, last,
+						this.indexingTimeout);
 				return last + " (still indexing after " + this.indexingTimeout.toSeconds() + "s)";
 			}
 			try {

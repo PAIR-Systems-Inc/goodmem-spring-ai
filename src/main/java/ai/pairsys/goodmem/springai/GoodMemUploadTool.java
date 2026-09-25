@@ -67,8 +67,11 @@ public class GoodMemUploadTool {
 			@ToolParam(required = false,
 					description = "Optional metadata as a flat JSON object of string values.") @Nullable Map<String, Object> metadata) {
 		Map<String, Object> result = new LinkedHashMap<>();
+		String space;
 		Path resolved;
 		try {
+			// The space id travels in the body here, but every id passes the same check.
+			space = GoodMemIds.requireUuid(spaceId, "spaceId");
 			resolved = resolveInside(fileName);
 		}
 		catch (IllegalArgumentException | IOException ex) {
@@ -80,7 +83,7 @@ public class GoodMemUploadTool {
 			byte[] bytes = Files.readAllBytes(resolved);
 			String contentType = contentTypeOf(resolved);
 			JsonMemoryCreationRequest.Builder request = JsonMemoryCreationRequest.builder()
-				.spaceId(spaceId)
+				.spaceId(space)
 				.contentType(contentType);
 			if (contentType.startsWith("text/")) {
 				request.originalContent(new String(bytes, StandardCharsets.UTF_8));
@@ -94,7 +97,7 @@ public class GoodMemUploadTool {
 			Memory memory = this.connection.client().memories.create(request.build());
 			result.put("success", true);
 			result.put("memoryId", memory.memoryId().value());
-			result.put("spaceId", spaceId);
+			result.put("spaceId", space);
 			result.put("contentType", contentType);
 			result.put("status", String.valueOf(memory.processingStatus()));
 			return result;
