@@ -30,6 +30,24 @@
   `{"success":true,...}`. On 0.2.0 all 140 refusal cases fail. Existing tests that used
   `m-1` and `r-1` as ids now use UUIDs. 194 offline tests.
 
+### Documentation
+
+- The README quickstart imported `RetrievalAugmentationAdvisor` from
+  `org.springframework.ai.chat.client.advisor`, where Spring AI 1.0.0 has no such class;
+  compiling the snippet failed with `cannot find symbol`. It now imports
+  `org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor`. Every Java snippet
+  in the README was compiled against the installed jar and run against a local mock
+  server: the quickstart sends one retrieve and the advisor puts the retrieved text in
+  the prompt; the search-tool snippet offers the model `goodmem_search(query, topK)`.
+- The README said the connector was not on Maven Central; 0.2.0 is. It now says 0.2.1
+  is unreleased and 0.2.0 lacks the id check.
+- The README described the CI key gate as matching "20+ alphanumerics as a whole
+  token"; the regex matches lowercase letters and digits only, anywhere in a line.
+- `GoodMemUploadTool`'s directory must already exist; the README now says so.
+- `ReadmeTests` resolves every class the README's Java snippets import and checks every
+  tool name it gives against the `@Tool` names; on the previous README it fails on the
+  advisor import. 196 offline tests.
+
 ## 0.2.0
 
 Audit release. Every defect below was reproduced against the `v0.1.0` tag
