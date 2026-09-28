@@ -54,6 +54,12 @@ import org.springframework.util.Assert;
  * value is kept in {@code goodmem_raw_score} beside {@code goodmem_score_kind}.
  *
  * <p>
+ * {@code goodmem_score_kind} says what the server did, not what was configured. When a
+ * configured reranker fails, the server reports {@code RERANKING_FAILED} (and
+ * {@code NOT_FOUND} for a missing reranker) and still returns the vector-stage hits;
+ * those are {@code vector}, negated like any vector score, and flagged partial.
+ *
+ * <p>
  * Space and reranker ids must be UUIDs; {@link Builder#build()} throws
  * {@link IllegalArgumentException} for anything else, before any request is made.
  */
@@ -150,6 +156,8 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 					Map.of("reranker_id", this.rerankerId, "max_results", this.topK)));
 		}
 		RetrieveMemoryStream stream = this.connection.client().memories.retrieve(request.build());
+		// Whether the hits are reranked is decided from the response: a requested reranker
+		// that fails leaves the server's vector fallback.
 		RetrievalResults.Outcome outcome = RetrievalResults.collect(stream, this.rerankerId != null);
 		if (outcome.partial() && outcome.hits().isEmpty()) {
 			// Contract: a problem with no results is empty plus a flag, never an exception.

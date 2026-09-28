@@ -2,9 +2,9 @@
 
 A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-> **Status — 0.2.1 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
-> 196 offline tests drive the real SDK over a mock server; 9 live tests run against a
-> GoodMem server. 0.2.0 is on Maven Central; 0.2.1 is not released yet, so install it
+> **Status — 0.2.2 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
+> 211 offline tests drive the real SDK over a mock server; 9 live tests run against a
+> GoodMem server. 0.2.1 is on Maven Central; 0.2.2 is not released yet, so install it
 > from source (below).
 
 GoodMem gives agents retrieval-augmented memory: text goes in, GoodMem chunks and
@@ -19,8 +19,9 @@ connector plugs that into Spring AI three ways:
 
 ## Installation
 
-0.2.1 is not on Maven Central yet. 0.2.0 is, but it lacks the id check described
-under [Administration tools](#administration-tools). Build and install 0.2.1 locally:
+0.2.2 is not on Maven Central yet. 0.2.1 is, but when a configured reranker fails it
+reports the server's vector fallback as reranker scores (see [Reranking](#reranking)).
+Build and install 0.2.2 locally:
 
 ```bash
 ./mvnw -B install -DskipTests
@@ -30,7 +31,7 @@ under [Administration tools](#administration-tools). Build and install 0.2.1 loc
 <dependency>
     <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.2.1</version>
+    <version>0.2.2</version>
 </dependency>
 ```
 
@@ -72,7 +73,7 @@ Each returned `Document` has the chunk text, the memory's metadata, and:
 | `goodmem_partial` | `true` when the server reported a problem with this search |
 | `goodmem_statuses` | the statuses it reported, when any |
 | `goodmem_memory_id`, `goodmem_chunk_id`, `goodmem_space_id` | where the text came from |
-| `goodmem_score_kind` | `vector` or `reranker` |
+| `goodmem_score_kind` | `reranker` when the server reranked, else `vector` (including a reranker that failed) |
 | `goodmem_raw_score` | the server's value, before any adjustment |
 | `source` | the memory's `originalContentRef` when it has one, else its id — for citations |
 
@@ -80,7 +81,9 @@ Each returned `Document` has the chunk text, the memory's metadata, and:
 product (the best match is the lowest number), so it is negated. A reranker score is
 passed through unchanged; its range is provider-dependent (Voyage rerank-2.5 returns
 roughly `0.27..0.93`, Jina v3 `-0.14..0.43`), so do not assume 0–1 when choosing a
-threshold.
+threshold. The connector sets no threshold; if you apply one to reranker scores, apply
+it only to documents whose `goodmem_score_kind` is `reranker` (see
+[Reranking](#reranking)).
 
 **Incomplete results are reported, never hidden.** If the server reports a problem
 (a reranker that failed, a space that could not be searched, a code this SDK does not
@@ -113,6 +116,26 @@ GoodMemDocumentRetriever.builder()
     .spaceId("...")
     .rerankerId("your-reranker-uuid")
     .build();
+```
+
+`goodmem_score_kind` (and the tool's `scoreKind`) says what the server did, not what
+was configured. When the reranker fails, the server reports `RERANKING_FAILED` (and
+`NOT_FOUND` for a missing reranker) and still returns the vector-stage hits. Those are
+`vector`, negated like any vector score, and come back with `goodmem_partial=true` and
+both statuses. Measured live: a missing reranker's fallback scored `0.7195, 0.5224,
+0.0579`, best match first; 0.2.1 labelled the same hits `reranker` with scores
+`-0.7195, -0.5224, -0.0579`, so Spring AI's default document joiner, which sorts by
+score, put the worst match first in the prompt.
+
+A reranker threshold therefore belongs on reranker-scored documents only:
+
+```java
+import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
+
+DocumentPostProcessor rerankerThreshold = (query, documents) -> documents.stream()
+    .filter(d -> !"reranker".equals(d.getMetadata().get("goodmem_score_kind")) || d.getScore() >= 0.5)
+    .toList();
+// RetrievalAugmentationAdvisor.builder().documentRetriever(retriever).documentPostProcessors(rerankerThreshold)
 ```
 
 ### Metadata filters
@@ -202,7 +225,7 @@ reproduced live before it was made; see `CHANGELOG.md`.
 These are the commands CI runs.
 
 ```bash
-./mvnw -B verify                       # JDK 21+; 196 offline tests, the 9 live ones skip without credentials
+./mvnw -B verify                       # JDK 21+; 211 offline tests, the 9 live ones skip without credentials
 
 GOODMEM_BASE_URL=https://localhost:8080 \
 GOODMEM_API_KEY=gm_... \
@@ -216,11 +239,12 @@ CI runs the same `verify` on JDK 21, plus two gates: no committed GoodMem API ke
 verification in this README or in `examples/` — the quickstart must not teach it.
 
 The offline tests drive the real SDK over a WireMock server, with event shapes captured
-from a live GoodMem v1.0.320 (`src/test/resources/retrieve_real.ndjson`). Nothing in the
-connector or the SDK is stubbed. `GoodMemIdPathTraversalTests` sends every id-taking
-entry point fourteen traversal and malformed ids (`../spaces/<uuid>`, `%2e%2e/…`,
-`<uuid>?x=1`, …) against a plain JDK HTTP server that records each request line as it
-arrived, and asserts that nothing reaches it.
+from a live GoodMem v1.0.320 (`src/test/resources/*.ndjson`: a plain search, a working
+reranker, and a missing reranker's vector fallback). Nothing in the connector or the
+SDK is stubbed. `GoodMemIdPathTraversalTests` sends every id-taking entry point
+fourteen traversal and malformed ids (`../spaces/<uuid>`, `%2e%2e/…`, `<uuid>?x=1`, …)
+against a plain JDK HTTP server that records each request line as it arrived, and
+asserts that nothing reaches it.
 
 ## License
 

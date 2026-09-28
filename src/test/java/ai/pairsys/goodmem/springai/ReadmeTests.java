@@ -74,10 +74,18 @@ class ReadmeTests {
 		int table = readme.indexOf("| metadata key |");
 		assertThat(table).isNotNegative();
 		String withoutMetadataTable = readme.substring(0, table) + readme.substring(readme.indexOf("\n\n", table));
+		Set<String> metadataKeys = new TreeSet<>();
+		Matcher key = TOOL_NAME.matcher(readme.substring(table, readme.indexOf("\n\n", table)));
+		while (key.find()) {
+			metadataKeys.add(key.group(1));
+		}
 		Set<String> named = new TreeSet<>();
 		Matcher m = TOOL_NAME.matcher(withoutMetadataTable);
 		while (m.find()) {
-			named.add(m.group(1));
+			// Prose may name a key from the table too (goodmem_score_kind); that is not a tool.
+			if (!metadataKeys.contains(m.group(1))) {
+				named.add(m.group(1));
+			}
 		}
 		assertThat(named).hasSizeGreaterThanOrEqualTo(11);
 		assertThat(real).containsAll(named);

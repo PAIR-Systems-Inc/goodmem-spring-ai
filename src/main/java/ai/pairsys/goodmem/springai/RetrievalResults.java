@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -46,6 +47,10 @@ import org.jspecify.annotations.Nullable;
  * empty, flagged. Neither throws.</li>
  * <li>A stream that breaks mid-way keeps what arrived and reports
  * {@code MALFORMED_STREAM}.</li>
+ * <li>Whether hits carry reranker scores is decided from what the server reported, not
+ * from configuration. When a requested reranker fails, the server says so
+ * ({@code RERANKING_FAILED}, and {@code NOT_FOUND} for a missing reranker) and returns
+ * the vector-stage hits instead; those are vector scores and are reported as such.</li>
  * </ul>
  */
 final class RetrievalResults {
@@ -73,13 +78,19 @@ final class RetrievalResults {
 		}
 	}
 
-	/** Everything a caller needs to report a retrieval honestly. */
+	/**
+	 * Everything a caller needs to report a retrieval honestly.
+	 *
+	 * @param reranked whether the hits carry reranker scores: a reranker was requested
+	 * and the server did not report that it failed. When it failed, the hits are the
+	 * vector fallback.
+	 */
 	record Outcome(List<Hit> hits, List<Map<String, Object>> statuses, boolean partial,
-			@Nullable String abstractReply) {
+			@Nullable String abstractReply, boolean reranked) {
 	}
 
 	/** Drain a stream, keeping every event that arrived before any break. */
-	static Outcome collect(RetrieveMemoryStream stream, boolean reranked) {
+	static Outcome collect(RetrieveMemoryStream stream, boolean rerankRequested) {
 		List<RetrieveMemoryEvent> events = new ArrayList<>();
 		String truncated = null;
 		try (stream) {
@@ -93,10 +104,15 @@ final class RetrievalResults {
 			}
 			truncated = ex.getMessage();
 		}
-		return outcome(events, reranked, truncated);
+		return outcome(events, rerankRequested, truncated);
 	}
 
-	static Outcome outcome(List<RetrieveMemoryEvent> events, boolean reranked, @Nullable String truncated) {
+	/**
+	 * Build the outcome of a drained stream.
+	 * @param rerankRequested whether a reranker was requested. The hits are scored as
+	 * reranked only if the server did not also report that reranking failed.
+	 */
+	static Outcome outcome(List<RetrieveMemoryEvent> events, boolean rerankRequested, @Nullable String truncated) {
 		List<Map<String, Object>> statuses = new ArrayList<>();
 		boolean partial = false;
 		for (RetrieveMemoryEvent event : events) {
@@ -135,7 +151,10 @@ final class RetrievalResults {
 				break;
 			}
 		}
-		return new Outcome(hits(events, reranked), statuses, partial, abstractReply);
+		// Decided once the whole stream is in: a RERANKING_FAILED can follow the hits it
+		// applies to.
+		boolean reranked = rerankRequested && !rerankingFailed(events);
+		return new Outcome(hits(events, reranked), statuses, partial, abstractReply, reranked);
 	}
 
 	static boolean isInformational(GoodMemStatus status) {
@@ -144,9 +163,42 @@ final class RetrievalResults {
 	}
 
 	/**
+	 * Whether the server reported that reranking did not happen. {@code RERANKING_FAILED}
+	 * says so directly. A {@code NOT_FOUND} naming the reranker (live:
+	 * {@code details: {"reranker_id": ...}}, message "Reranker not found") means the
+	 * same, even if it arrives alone. Any other status leaves reranker scores alone.
+	 */
+	static boolean rerankingFailed(List<RetrieveMemoryEvent> events) {
+		for (RetrieveMemoryEvent event : events) {
+			GoodMemStatus status = event.status();
+			if (status == null) {
+				continue;
+			}
+			if (status.code() == GoodMemStatusCode.RERANKING_FAILED) {
+				return true;
+			}
+			if (status.code() == GoodMemStatusCode.NOT_FOUND && namesReranker(status)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean namesReranker(GoodMemStatus status) {
+		Map<String, String> details = status.details();
+		if (details != null && (details.containsKey("reranker_id") || details.containsKey("rerankerId"))) {
+			return true;
+		}
+		return status.message() != null && status.message().toLowerCase(Locale.ROOT).contains("reranker");
+	}
+
+	/**
 	 * Join chunks to their memory definitions <em>by UUID</em>, ignoring event order and
 	 * the positional {@code memoryIndex}. Two chunks of one memory are two hits; the same
 	 * chunk twice is one.
+	 *
+	 * @param reranked whether the server actually reranked, as decided by
+	 * {@link #outcome}; not merely whether a reranker was requested
 	 */
 	static List<Hit> hits(List<RetrieveMemoryEvent> events, boolean reranked) {
 		Map<String, Memory> memories = new LinkedHashMap<>();

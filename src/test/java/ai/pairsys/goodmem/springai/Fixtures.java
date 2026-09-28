@@ -34,8 +34,13 @@ final class Fixtures {
 	}
 
 	static String realCapture() {
+		return capture("retrieve_real.ndjson");
+	}
+
+	/** A retrieve stream captured verbatim from a live server, from {@code src/test/resources}. */
+	static String capture(String name) {
 		try {
-			return Files.readString(Path.of("src/test/resources/retrieve_real.ndjson"), StandardCharsets.UTF_8);
+			return Files.readString(Path.of("src/test/resources", name), StandardCharsets.UTF_8);
 		}
 		catch (IOException ex) {
 			throw new UncheckedIOException(ex);
@@ -58,6 +63,12 @@ final class Fixtures {
 	static String statusEvent(String code, String message) {
 		String codeField = (code == null) ? "" : "\"code\":\"" + code + "\",";
 		return "{\"status\":{" + codeField + "\"message\":" + json(message) + "}}";
+	}
+
+	/** A status with {@code details}, as the server sends for a missing reranker. */
+	static String statusEvent(String code, String message, Map<String, String> details) {
+		return "{\"status\":{\"code\":\"" + code + "\",\"message\":" + json(message) + ",\"details\":"
+				+ jsonObject(details) + "}}";
 	}
 
 	static String boundary(String kind) {

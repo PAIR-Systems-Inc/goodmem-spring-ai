@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.2.2
+
+### Fixed
+
+- **A failed reranker's vector fallback was reported as reranker scores, worst match
+  highest.** When a configured reranker fails, GoodMem (v1.0.320) reports
+  `RERANKING_FAILED` (and `NOT_FOUND` naming a missing reranker) and still returns the
+  vector-stage hits, scored as negative distances. 0.2.1 labelled every hit `reranker`
+  because a reranker was configured, and passed the distances through un-negated.
+  Measured live on 0.2.1 (three memories, query "capital of Jordan", missing reranker):
+  `goodmem_score_kind=reranker`, scores `-0.7195, -0.5224, -0.0579` for the best, middle
+  and worst match; Spring AI's `ConcatenationDocumentJoiner` (the
+  `RetrievalAugmentationAdvisor` default, which sorts by score) then put the worst match
+  first; a caller threshold on reranker scores (`>= 0.0`) kept 0 of 3. Whether the hits
+  are reranked is now decided from the response, after the whole stream is read (a
+  `RERANKING_FAILED` can follow the hits): a reranker was requested **and** the server
+  reported neither `RERANKING_FAILED` nor a `NOT_FOUND` naming the reranker
+  (`reranker_id`/`rerankerId` in its details, or "reranker" in its message). The
+  fallback is now `vector`, scored `0.7195, 0.5224, 0.0579`, best match first through
+  the joiner, and still `goodmem_partial=true` with both statuses. An unrelated status
+  (an unknown code, a `NOT_FOUND` for something else) leaves reranker scores as they
+  were; a working reranker is unchanged (`0.9102, 0.4766, 0.2715`, `reranker`).
+
+### Tests
+
+- `GoodMemRerankerFallbackTests` (11) drives the real SDK over WireMock with two streams
+  captured live on 2026-09-28 (`retrieve_reranker_failed.ndjson`,
+  `retrieve_reranked.ndjson`) and the stream the CAMEL fix was measured with
+  (`retrieve_degraded_hits.ndjson`): the fallback is `vector`, negated and in order,
+  also through Spring AI's joiner and a kind-keyed `DocumentPostProcessor` threshold; a
+  `RERANKING_FAILED` after the hits and a reranker `NOT_FOUND` alone both count; partial
+  and statuses are kept; an unrelated status and a working reranker keep reranker
+  scores. On 0.2.1, 7 of the 11 fail; the other 4 are the guards. `RetrievalOutcomeTests`
+  (4) pins the new `RetrievalResults.Outcome.reranked()`. 211 offline tests.
+- The live bogus-reranker test now also asserts the fallback is `vector`, higher-is-better
+  and in order; on 0.2.1 it fails with `scoreKind=reranker`, `score=-0.7478`.
+- `ReadmeTests` treats the keys in the README's metadata table as metadata keys wherever
+  the README names them, so prose can mention `goodmem_score_kind` without it being
+  checked as a tool name.
+
+### Documentation
+
+- The README says what `goodmem_score_kind` means when a reranker fails, and that a
+  reranker threshold belongs on reranker-scored documents only, with a
+  `DocumentPostProcessor` example.
+
 ## 0.2.1
 
 ### Security
