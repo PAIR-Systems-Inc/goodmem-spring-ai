@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  # Started on a v* tag by release-on-merge.yml after a merge bumps the version.
+  workflow_dispatch:
 
 permissions:
   contents: read

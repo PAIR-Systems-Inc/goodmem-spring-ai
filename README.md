@@ -2,10 +2,10 @@
 
 A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-> **Status — 0.2.2 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
+> **Status — 0.2.2.** Built on the official `ai.pairsys:goodmem-java` SDK.
 > 211 offline tests drive the real SDK over a mock server; 9 live tests run against a
-> GoodMem server. 0.2.1 is on Maven Central; 0.2.2 is not released yet, so install it
-> from source (below).
+> GoodMem server. A merged PR that bumps the version in `pom.xml` is published to Maven
+> Central automatically once CI passes.
 
 GoodMem gives agents retrieval-augmented memory: text goes in, GoodMem chunks and
 embeds it server-side, and semantic search brings the relevant passages back. This
@@ -19,13 +19,8 @@ connector plugs that into Spring AI three ways:
 
 ## Installation
 
-0.2.2 is not on Maven Central yet. 0.2.1 is, but when a configured reranker fails it
-reports the server's vector fallback as reranker scores (see [Reranking](#reranking)).
-Build and install 0.2.2 locally:
-
-```bash
-./mvnw -B install -DskipTests
-```
+Use 0.2.2 or later: when a configured reranker fails, 0.2.1 reports the server's vector
+fallback as reranker scores (see [Reranking](#reranking)).
 
 ```xml
 <dependency>
