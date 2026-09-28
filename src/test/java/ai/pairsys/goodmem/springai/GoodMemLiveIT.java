@@ -2,6 +2,7 @@ package ai.pairsys.goodmem.springai;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -113,6 +114,13 @@ class GoodMemLiveIT {
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> statuses = (List<Map<String, Object>>) result.get("statuses");
 		assertThat(statuses).extracting(s -> s.get("code")).contains("RERANKING_FAILED");
+		// The server falls back to vector hits. 0.2.1 labelled them "reranker" and left the
+		// distances negative, so the best match scored lowest.
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> results = (List<Map<String, Object>>) result.get("results");
+		assertThat(results).isNotEmpty().allSatisfy(r -> assertThat(r).containsEntry("scoreKind", "vector"));
+		assertThat(results).extracting(r -> (Double) r.get("score")).isSortedAccordingTo(Comparator.reverseOrder());
+		assertThat((Double) results.get(0).get("score")).isPositive();
 	}
 
 	@Test
