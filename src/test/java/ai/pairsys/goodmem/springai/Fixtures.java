@@ -20,6 +20,11 @@ final class Fixtures {
 
 	static final String OTHER_EMBEDDER_ID = "019cfd94-2844-7117-85ca-1b9919758a26";
 
+	/** Ids that go into a URL path must be UUIDs; the connector refuses anything else. */
+	static final String MEMORY_ID = "01a0d16c-1f2e-7a3b-9c4d-5e6f7a8b9c0d";
+
+	static final String RERANKER_ID = "019cfd1c-c033-7517-b7de-f73941a0464c";
+
 	/** A real vector score from the capture. Negative: pgvector inner product. */
 	static final double REAL_VECTOR_SCORE = -0.5911163091659546;
 

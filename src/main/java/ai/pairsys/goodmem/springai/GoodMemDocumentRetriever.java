@@ -52,6 +52,10 @@ import org.springframework.util.Assert;
  * better: vector scores are negated from GoodMem's negative inner product, reranker
  * scores are passed through (their range is provider-dependent, not 0–1). The raw
  * value is kept in {@code goodmem_raw_score} beside {@code goodmem_score_kind}.
+ *
+ * <p>
+ * Space and reranker ids must be UUIDs; {@link Builder#build()} throws
+ * {@link IllegalArgumentException} for anything else, before any request is made.
  */
 public final class GoodMemDocumentRetriever implements DocumentRetriever {
 
@@ -78,9 +82,16 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 		Assert.notEmpty(builder.spaceIds, "at least one spaceId is required");
 		Assert.isTrue(builder.topK > 0, "topK must be positive");
 		this.connection = builder.connection;
-		this.spaceIds = List.copyOf(builder.spaceIds);
+		// These travel in the request body, not a path, but every id passes the same check,
+		// here at construction so a bad one fails before the first search.
+		List<String> ids = new ArrayList<>(builder.spaceIds.size());
+		for (String spaceId : builder.spaceIds) {
+			ids.add(GoodMemIds.requireUuid(spaceId, "spaceId"));
+		}
+		this.spaceIds = List.copyOf(ids);
 		this.topK = builder.topK;
-		this.rerankerId = builder.rerankerId;
+		this.rerankerId = (builder.rerankerId != null) ? GoodMemIds.requireUuid(builder.rerankerId, "rerankerId")
+				: null;
 		this.filter = (builder.filter != null && !builder.filter.isBlank()) ? builder.filter : null;
 	}
 

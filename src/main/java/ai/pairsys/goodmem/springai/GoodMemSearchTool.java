@@ -115,4 +115,12 @@ public class GoodMemSearchTool {
 		return result;
 	}
 
+	/** An argument refused before any request was made. */
+	static Map<String, Object> invalidInput(IllegalArgumentException ex) {
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("success", false);
+		result.put("error", ex.getMessage());
+		return result;
+	}
+
 }

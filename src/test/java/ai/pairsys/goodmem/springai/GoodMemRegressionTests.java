@@ -21,8 +21,10 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
 import static ai.pairsys.goodmem.springai.Fixtures.EMBEDDER_ID;
+import static ai.pairsys.goodmem.springai.Fixtures.MEMORY_ID;
 import static ai.pairsys.goodmem.springai.Fixtures.OTHER_EMBEDDER_ID;
 import static ai.pairsys.goodmem.springai.Fixtures.REAL_VECTOR_SCORE;
+import static ai.pairsys.goodmem.springai.Fixtures.RERANKER_ID;
 import static ai.pairsys.goodmem.springai.Fixtures.SPACE_ID;
 import static ai.pairsys.goodmem.springai.Fixtures.boundary;
 import static ai.pairsys.goodmem.springai.Fixtures.chunkEvent;
@@ -197,14 +199,14 @@ class GoodMemRegressionTests {
 		GoodMemDocumentRetriever reranked = GoodMemDocumentRetriever.builder()
 			.connection(connection(wm))
 			.spaceId(SPACE_ID)
-			.rerankerId("r-1")
+			.rerankerId(RERANKER_ID)
 			.build();
 
 		Document doc = reranked.retrieve(new Query("x")).get(0);
 
 		assertThat(doc.getScore()).isEqualTo(0.42);
 		assertThat(doc.getMetadata()).containsEntry("goodmem_score_kind", "reranker");
-		assertThat(lastRetrieveBody()).contains("\"postProcessor\"").contains("\"reranker_id\":\"r-1\"");
+		assertThat(lastRetrieveBody()).contains("\"postProcessor\"").contains("\"reranker_id\":\"" + RERANKER_ID + "\"");
 	}
 
 	// ----- P19 / P34: filters -----
@@ -263,23 +265,24 @@ class GoodMemRegressionTests {
 
 	@Test
 	void creatingAMemoryWaitsForIndexing(WireMockRuntimeInfo wm) {
-		stubFor(post(urlPathEqualTo("/v1/memories")).willReturn(okJson(memoryJson("m-1", "PENDING", null))));
-		stubFor(get(urlPathEqualTo("/v1/memories/m-1")).inScenario("index")
+		String path = "/v1/memories/" + MEMORY_ID;
+		stubFor(post(urlPathEqualTo("/v1/memories")).willReturn(okJson(memoryJson(MEMORY_ID, "PENDING", null))));
+		stubFor(get(urlPathEqualTo(path)).inScenario("index")
 			.whenScenarioStateIs(Scenario.STARTED)
-			.willReturn(okJson(memoryJson("m-1", "PENDING", null)))
+			.willReturn(okJson(memoryJson(MEMORY_ID, "PENDING", null)))
 			.willSetStateTo("processing"));
-		stubFor(get(urlPathEqualTo("/v1/memories/m-1")).inScenario("index")
+		stubFor(get(urlPathEqualTo(path)).inScenario("index")
 			.whenScenarioStateIs("processing")
-			.willReturn(okJson(memoryJson("m-1", "PROCESSING", null)))
+			.willReturn(okJson(memoryJson(MEMORY_ID, "PROCESSING", null)))
 			.willSetStateTo("done"));
-		stubFor(get(urlPathEqualTo("/v1/memories/m-1")).inScenario("index")
+		stubFor(get(urlPathEqualTo(path)).inScenario("index")
 			.whenScenarioStateIs("done")
-			.willReturn(okJson(memoryJson("m-1", "COMPLETED", null))));
+			.willReturn(okJson(memoryJson(MEMORY_ID, "COMPLETED", null))));
 
 		Map<String, Object> result = new GoodMemAdminTools(connection(wm)).createMemory(SPACE_ID, "hello", null);
 
 		assertThat(result).containsEntry("success", true).containsEntry("status", "COMPLETED");
-		assertThat(findAll(com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPathEqualTo("/v1/memories/m-1"))))
+		assertThat(findAll(com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPathEqualTo(path))))
 			.hasSizeGreaterThanOrEqualTo(3);
 	}
 
@@ -362,13 +365,14 @@ class GoodMemRegressionTests {
 
 	@Test
 	void gettingAMemoryReturnsItsContentInOneRequest(WireMockRuntimeInfo wm) {
-		stubFor(get(urlPathEqualTo("/v1/memories/m-1")).willReturn(okJson(memoryJson("m-1", "COMPLETED", "hello there"))));
+		String path = "/v1/memories/" + MEMORY_ID;
+		stubFor(get(urlPathEqualTo(path)).willReturn(okJson(memoryJson(MEMORY_ID, "COMPLETED", "hello there"))));
 
-		Map<String, Object> result = new GoodMemAdminTools(connection(wm)).getMemory("m-1");
+		Map<String, Object> result = new GoodMemAdminTools(connection(wm)).getMemory(MEMORY_ID);
 
 		assertThat(result).containsEntry("success", true).containsEntry("content", "hello there");
 		assertThat(findAll(com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPathMatching("/v1/memories/.*")))).hasSize(1);
-		assertThat(findAll(com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPathEqualTo("/v1/memories/m-1")))
+		assertThat(findAll(com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPathEqualTo(path)))
 			.get(0)
 			.getUrl()).contains("includeContent=true");
 	}

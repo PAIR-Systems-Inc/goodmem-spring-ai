@@ -2,9 +2,10 @@
 
 A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-> **Status — 0.2.0 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
-> 28 offline tests drive the real SDK over a mock server; 9 live tests run against a
-> GoodMem server. Not yet on Maven Central; install from source (below).
+> **Status — 0.2.1 (unreleased).** Built on the official `ai.pairsys:goodmem-java` SDK.
+> 196 offline tests drive the real SDK over a mock server; 9 live tests run against a
+> GoodMem server. 0.2.0 is on Maven Central; 0.2.1 is not released yet, so install it
+> from source (below).
 
 GoodMem gives agents retrieval-augmented memory: text goes in, GoodMem chunks and
 embeds it server-side, and semantic search brings the relevant passages back. This
@@ -18,7 +19,8 @@ connector plugs that into Spring AI three ways:
 
 ## Installation
 
-Not yet published. Build and install locally:
+0.2.1 is not on Maven Central yet. 0.2.0 is, but it lacks the id check described
+under [Administration tools](#administration-tools). Build and install 0.2.1 locally:
 
 ```bash
 ./mvnw -B install -DskipTests
@@ -28,7 +30,7 @@ Not yet published. Build and install locally:
 <dependency>
     <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
 </dependency>
 ```
 
@@ -42,7 +44,7 @@ them) and a GoodMem server.
 import ai.pairsys.goodmem.springai.GoodMemConnection;
 import ai.pairsys.goodmem.springai.GoodMemDocumentRetriever;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.RetrievalAugmentationAdvisor;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 
 GoodMemConnection connection = GoodMemConnection.builder()
     .baseUrl("https://goodmem.example.com:8080")
@@ -142,6 +144,13 @@ delete spaces — so give it only to agents that administer GoodMem:
 | `goodmem_list_memories`, `goodmem_get_memory`, `goodmem_delete_memory` | listings follow pagination internally |
 | `goodmem_list_embedders` | |
 
+Every id argument (`spaceId`, `memoryId`, `embedderId`) must be a UUID. Anything else
+is refused with `success=false` before any request is made, because the SDK puts ids
+into URL paths and resolves `..` in them: in 0.2.0, `goodmem_delete_memory` given
+`../spaces/<uuid>` sent `DELETE /v1/spaces/<uuid>` and reported success. The same check
+applies to the retriever's `spaceId` and `rerankerId`, where `build()` throws
+`IllegalArgumentException`.
+
 ```java
 GoodMemAdminTools admin = new GoodMemAdminTools(connection);           // waits up to 60s for indexing
 GoodMemAdminTools quick = new GoodMemAdminTools(connection, false, Duration.ZERO, 200);
@@ -149,7 +158,8 @@ GoodMemAdminTools quick = new GoodMemAdminTools(connection, false, Duration.ZERO
 
 ### Uploading files
 
-The model never names a path. `GoodMemUploadTool` takes a directory you choose and a
+The model never names a path. `GoodMemUploadTool` takes a directory you choose (it
+must already exist; the constructor throws `IllegalArgumentException` otherwise) and a
 file name relative to it, and refuses anything — including a symlink — that resolves
 outside that directory.
 
@@ -157,8 +167,8 @@ outside that directory.
 GoodMemUploadTool upload = new GoodMemUploadTool(connection, Path.of("/srv/agent-uploads"));
 ```
 
-The tool is called **`goodmem_upload_file`** and takes `spaceId`, `fileName` and
-optional `metadata`.
+The tool is called **`goodmem_upload_file`** and takes `spaceId` (a UUID), `fileName`
+and optional `metadata`.
 
 ## Connection settings
 
@@ -192,7 +202,7 @@ reproduced live before it was made; see `CHANGELOG.md`.
 These are the commands CI runs.
 
 ```bash
-./mvnw -B verify                       # JDK 21+; 28 offline tests, the 9 live ones skip without credentials
+./mvnw -B verify                       # JDK 21+; 196 offline tests, the 9 live ones skip without credentials
 
 GOODMEM_BASE_URL=https://localhost:8080 \
 GOODMEM_API_KEY=gm_... \
@@ -202,12 +212,15 @@ GOODMEM_VERIFY_SSL=false \
 ```
 
 CI runs the same `verify` on JDK 21, plus two gates: no committed GoodMem API key
-(`gm_` followed by 20+ alphanumerics as a whole token), and no call disabling TLS
+(`gm_` followed by 20 or more lowercase letters or digits, anywhere in a line), and no call disabling TLS
 verification in this README or in `examples/` — the quickstart must not teach it.
 
 The offline tests drive the real SDK over a WireMock server, with event shapes captured
 from a live GoodMem v1.0.320 (`src/test/resources/retrieve_real.ndjson`). Nothing in the
-connector or the SDK is stubbed.
+connector or the SDK is stubbed. `GoodMemIdPathTraversalTests` sends every id-taking
+entry point fourteen traversal and malformed ids (`../spaces/<uuid>`, `%2e%2e/…`,
+`<uuid>?x=1`, …) against a plain JDK HTTP server that records each request line as it
+arrived, and asserts that nothing reaches it.
 
 ## License
 
