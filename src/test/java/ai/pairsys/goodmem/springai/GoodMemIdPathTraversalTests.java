@@ -155,7 +155,15 @@ class GoodMemIdPathTraversalTests {
 							.rerankerId(id)
 							.build()
 							.retrieve(new Query("q")),
-						"POST", "/v1/memories:retrieve", "\"reranker_id\":\"%s\"", Set.of()));
+						"POST", "/v1/memories:retrieve", "\"reranker_id\":\"%s\"", Set.of()),
+				new EntryPoint("GoodMemDocumentRetriever.llmId", "llmId", false,
+						(c, id, dir) -> GoodMemDocumentRetriever.builder()
+							.connection(c)
+							.spaceId(OTHER)
+							.llmId(id)
+							.build()
+							.retrieve(new Query("q")),
+						"POST", "/v1/memories:retrieve", "\"llm_id\":\"%s\"", Set.of()));
 	}
 
 	static Stream<Arguments> everyEntryPointWithEveryTraversal() {

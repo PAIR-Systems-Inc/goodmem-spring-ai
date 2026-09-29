@@ -18,11 +18,13 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Live tests against a running GoodMem server. Skipped unless GOODMEM_BASE_URL,
- * GOODMEM_API_KEY and GOODMEM_EMBEDDER_ID are set. The space this creates is deleted
- * afterwards, and the teardown is verified.
+ * GOODMEM_API_KEY and GOODMEM_EMBEDDER_ID are set; the working-LLM test also needs
+ * GOODMEM_LLM_ID. The space this creates is deleted afterwards, and the teardown is
+ * verified.
  */
 @EnabledIfEnvironmentVariable(named = "GOODMEM_API_KEY", matches = ".+")
 @EnabledIfEnvironmentVariable(named = "GOODMEM_EMBEDDER_ID", matches = ".+")
@@ -30,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GoodMemLiveIT {
 
 	private static final String EMBEDDER = System.getenv("GOODMEM_EMBEDDER_ID");
+
+	private static final String LLM = System.getenv("GOODMEM_LLM_ID");
 
 	private static final String OTHER_EMBEDDER = System.getenv().getOrDefault("GOODMEM_OTHER_EMBEDDER_ID",
 			"019cfd94-2844-7117-85ca-1b9919758a26");
@@ -121,6 +125,50 @@ class GoodMemLiveIT {
 		assertThat(results).isNotEmpty().allSatisfy(r -> assertThat(r).containsEntry("scoreKind", "vector"));
 		assertThat(results).extracting(r -> (Double) r.get("score")).isSortedAccordingTo(Comparator.reverseOrder());
 		assertThat((Double) results.get(0).get("score")).isPositive();
+	}
+
+	@Test
+	void aConfiguredLlmAnswersFromTheRetrievedChunks() {
+		assumeTrue(LLM != null && !LLM.isBlank(), "GOODMEM_LLM_ID not set");
+		this.admin.createMemory(this.spaceId, "Amman is the capital and largest city of Jordan.", Map.of("tag", "llm"));
+		GoodMemDocumentRetriever withLlm = GoodMemDocumentRetriever.builder()
+			.connection(this.connection)
+			.spaceId(this.spaceId)
+			.topK(5)
+			.filter(GoodMemFilters.textEquals("tag", "llm"))
+			.llmId(LLM)
+			.build();
+
+		Map<String, Object> result = new GoodMemSearchTool(withLlm).search("What is the capital of Jordan?", 3);
+		List<Document> docs = withLlm.retrieve(new Query("What is the capital of Jordan?"));
+
+		assertThat(result).containsEntry("success", true).containsEntry("partial", false);
+		assertThat((String) result.get("abstractReply")).containsIgnoringCase("Amman");
+		assertThat(docs).isNotEmpty();
+		assertThat((String) docs.get(0).getMetadata().get(GoodMemDocumentRetriever.METADATA_ABSTRACT_REPLY))
+			.containsIgnoringCase("Amman");
+		// An LLM does not rerank: these are still vector scores, negated.
+		assertThat(docs.get(0).getMetadata()).containsEntry("goodmem_score_kind", "vector");
+		assertThat(docs.get(0).getScore()).isPositive();
+	}
+
+	@Test
+	void aMissingLlmIsReportedAndTheHitsAreKept() {
+		this.admin.createMemory(this.spaceId, "The LLM failure test document.", Map.of("tag", "llm-missing"));
+		GoodMemDocumentRetriever missing = GoodMemDocumentRetriever.builder()
+			.connection(this.connection)
+			.spaceId(this.spaceId)
+			.filter(GoodMemFilters.textEquals("tag", "llm-missing"))
+			.llmId("00000000-0000-4000-8000-000000000000")
+			.build();
+
+		Map<String, Object> result = new GoodMemSearchTool(missing).search("LLM failure test", 3);
+
+		assertThat(result).containsEntry("success", true).containsEntry("partial", true).doesNotContainKey("abstractReply");
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> statuses = (List<Map<String, Object>>) result.get("statuses");
+		assertThat(statuses).extracting(s -> s.get("code")).contains("NOT_FOUND", "SUMMARIZATION_FAILED");
+		assertThat((List<?>) result.get("results")).isNotEmpty();
 	}
 
 	@Test

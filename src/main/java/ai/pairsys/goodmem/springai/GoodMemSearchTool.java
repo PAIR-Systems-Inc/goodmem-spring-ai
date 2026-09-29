@@ -34,14 +34,17 @@ import org.springframework.util.Assert;
 /**
  * The one tool an agent needs to read from GoodMem. The model supplies a query and,
  * optionally, how many results it wants; which spaces are searched, whether a reranker
- * runs and any metadata filter are the developer's decisions, fixed on the
+ * or an LLM runs and any metadata filter are the developer's decisions, fixed on the
  * {@link GoodMemDocumentRetriever} this wraps.
  *
  * <p>
  * The result is a map the model can read directly: {@code results} (chunk text joined
- * to its memory's metadata), {@code partial}, and {@code statuses} when the server
- * reported a problem. A server-reported problem never fails the tool; a transport or
- * API error returns {@code success=false} with the server's own message.
+ * to its memory's metadata), {@code partial}, {@code statuses} when the server reported
+ * a problem, and {@code abstractReply} (GoodMem's answer from the retrieved chunks) when
+ * the retriever has an {@link GoodMemDocumentRetriever.Builder#llmId LLM} and it
+ * answered. A server-reported problem, including an LLM that failed, never fails the
+ * tool; a transport or API error returns {@code success=false} with the server's own
+ * message.
  */
 public class GoodMemSearchTool {
 
