@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- **`GoodMemDocumentRetriever.Builder.llmId`: an opt-in GoodMem LLM that answers from
+  the retrieved chunks.** 0.2.2 had no way to request one: the builder took only
+  `connection`, `spaceId(s)`, `topK`, `rerankerId` and `filter`, the request carried a
+  post-processor only for a reranker, and the `abstractReply` handling `GoodMemSearchTool`
+  already had could never be reached. `llmId` is developer configuration, set on the
+  retriever beside `rerankerId`, and is sent as `llm_id` in the same
+  `ChatPostProcessorFactory` config (with `reranker_id` when both are set). Unset, the
+  request is exactly as before. It is not model-facing: `goodmem_search` still takes
+  only `query` and `topK`, as decided in 0.2.0.
+- **Where the answer appears.** `GoodMemSearchTool` returns it as `abstractReply` beside
+  `results` (also when nothing was found: live, an empty space returned the LLM's "no
+  information" reply). Every `Document` from `GoodMemDocumentRetriever` carries it as
+  `goodmem_abstract_reply` (`METADATA_ABSTRACT_REPLY`). That is metadata only:
+  `RetrievalAugmentationAdvisor` answers with the application's own `ChatModel` and its
+  default augmenter puts only document text in the prompt, so GoodMem's answer is not
+  fed in as a second answer; the application can read it from the advisor's
+  `DOCUMENT_CONTEXT`.
+- **An LLM that fails does not fail the search.** The server reports
+  `SUMMARIZATION_FAILED` (after a `NOT_FOUND` naming `llm_id` for a missing LLM); the
+  hits are kept, flagged partial, with both statuses and no reply. Measured live through
+  the connector (three memories, "capital of Jordan"): working LLM (OpenRouter
+  qwen3-8b) → `partial=false`, 3 hits, a reply naming Amman; missing LLM →
+  `partial=true`, `[NOT_FOUND, SUMMARIZATION_FAILED]`, 3 hits; an OpenAI LLM out of
+  credits → `partial=true`, `[SUMMARIZATION_FAILED]` (its message carries the provider's
+  429), 3 hits. Scores are unchanged by an LLM: `vector`, `0.7195` for the best match in
+  all three cases, and a missing LLM beside a working reranker leaves the hits
+  `reranker`-scored (its `NOT_FOUND` names the LLM, not the reranker).
+- `llmId` must be a UUID, checked by the same validator as every other id;
+  `build()` throws `IllegalArgumentException` naming `llmId` before any request is made.
+
+### Tests
+
+- `GoodMemLlmPostProcessingTests` (14) drives the real SDK over WireMock with four
+  streams captured live on 2026-09-29 (`retrieve_llm_reply.ndjson`,
+  `retrieve_llm_missing.ndjson`, `retrieve_llm_no_credits.ndjson`,
+  `retrieve_reranked_llm_missing.ndjson`): `llm_id` is sent only when set, alone or
+  beside `reranker_id`; a non-UUID is refused with no request; the tool schema has no
+  LLM argument; the reply reaches the tool (also through Spring AI's `ToolCallback`) and
+  every `Document`, and stays out of `RetrievalAugmentationAdvisor`'s prompt while
+  appearing in its document context; a missing LLM and a provider failure are partial
+  with their statuses and every hit; scores are unchanged, including a working
+  reranker's. On 0.2.2 the class does not compile (`cannot find symbol: method
+  llmId(java.lang.String)`).
+- `GoodMemIdPathTraversalTests` covers `GoodMemDocumentRetriever.llmId` as an eleventh
+  entry point (14 refusals, 2 valid ids). 241 offline tests.
+- Two live tests: a configured LLM answers (`abstractReply` and `goodmem_abstract_reply`
+  name Amman; scores stay `vector`), and a missing LLM is partial with `NOT_FOUND` and
+  `SUMMARIZATION_FAILED` and keeps its hits. The first skips without `GOODMEM_LLM_ID`.
+  11 live tests.
+
+### Documentation
+
+- README: "Answers from a GoodMem LLM" — the option, that it is opt-in and set by the
+  developer, where the answer appears for the tool and for the retriever, what happens
+  when the LLM fails; `goodmem_abstract_reply` in the metadata table.
+
 ## 0.2.2
 
 ### Fixed

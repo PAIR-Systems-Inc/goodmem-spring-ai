@@ -2,8 +2,8 @@
 
 A [GoodMem](https://goodmem.ai) connector for [Spring AI](https://spring.io/projects/spring-ai).
 
-> **Status — 0.2.2.** Built on the official `ai.pairsys:goodmem-java` SDK.
-> 211 offline tests drive the real SDK over a mock server; 9 live tests run against a
+> **Status — 0.3.0.** Built on the official `ai.pairsys:goodmem-java` SDK.
+> 241 offline tests drive the real SDK over a mock server; 11 live tests run against a
 > GoodMem server. A merged PR that bumps the version in `pom.xml` is published to Maven
 > Central automatically once CI passes.
 
@@ -20,13 +20,14 @@ connector plugs that into Spring AI three ways:
 ## Installation
 
 Use 0.2.2 or later: when a configured reranker fails, 0.2.1 reports the server's vector
-fallback as reranker scores (see [Reranking](#reranking)).
+fallback as reranker scores (see [Reranking](#reranking)). `llmId` (see
+[Answers from a GoodMem LLM](#answers-from-a-goodmem-llm)) needs 0.3.0.
 
 ```xml
 <dependency>
     <groupId>io.github.bashareid</groupId>
     <artifactId>goodmem-spring-ai</artifactId>
-    <version>0.2.2</version>
+    <version>0.3.0</version>
 </dependency>
 ```
 
@@ -71,6 +72,7 @@ Each returned `Document` has the chunk text, the memory's metadata, and:
 | `goodmem_score_kind` | `reranker` when the server reranked, else `vector` (including a reranker that failed) |
 | `goodmem_raw_score` | the server's value, before any adjustment |
 | `source` | the memory's `originalContentRef` when it has one, else its id — for citations |
+| `goodmem_abstract_reply` | GoodMem's answer from the retrieved chunks, when the retriever has an `llmId` and the LLM answered |
 
 `Document.getScore()` is higher-is-better. A GoodMem vector score is a negative inner
 product (the best match is the lowest number), so it is negated. A reranker score is
@@ -100,8 +102,9 @@ String reply = ChatClient.builder(chatModel).build()
 ```
 
 The tool is called **`goodmem_search`**; the model supplies only `query` and,
-optionally, `topK`. Spaces, reranker and filter stay with the developer. The tool never fails on a server-reported status; it returns
-`partial` and `statuses` alongside `results`.
+optionally, `topK`. Spaces, reranker, LLM and filter stay with the developer. The tool never fails on a server-reported status; it returns
+`partial` and `statuses` alongside `results`, and `abstractReply` when the retriever has
+an [LLM](#answers-from-a-goodmem-llm).
 
 ### Reranking
 
@@ -132,6 +135,69 @@ DocumentPostProcessor rerankerThreshold = (query, documents) -> documents.stream
     .toList();
 // RetrievalAugmentationAdvisor.builder().documentRetriever(retriever).documentPostProcessors(rerankerThreshold)
 ```
+
+### Answers from a GoodMem LLM
+
+GoodMem can run an LLM over the chunks it retrieved and return a grounded answer. It is
+off unless you set it, and only the developer can: `llmId` (an LLM registered in
+GoodMem, as a UUID) goes on the retriever beside `rerankerId`. The model cannot choose
+or change it; `goodmem_search` still takes only `query` and `topK`.
+
+```java
+GoodMemDocumentRetriever answering = GoodMemDocumentRetriever.builder()
+    .connection(connection)
+    .spaceId("...")
+    .llmId("your-llm-uuid")      // optional; can be combined with rerankerId
+    .build();
+
+Map<String, Object> result = new GoodMemSearchTool(answering).search("What is the capital of Jordan?", 3);
+String reply = (String) result.get("abstractReply");
+```
+
+Where the answer appears:
+
+- **`GoodMemSearchTool`** — `abstractReply` in the tool's result, beside `results`, so
+  the model reads GoodMem's answer together with the passages it came from. Measured
+  live (OpenRouter qwen3-8b, three memories): "The capital of Jordan is Amman, which is
+  also its largest city. …".
+- **`GoodMemDocumentRetriever`** — `goodmem_abstract_reply` (also
+  `GoodMemDocumentRetriever.METADATA_ABSTRACT_REPLY`) on every returned `Document`.
+
+In a RAG pipeline the answer is metadata only. `RetrievalAugmentationAdvisor` answers
+with **your** `ChatModel`, and its default query augmenter puts only document text in the
+prompt, so GoodMem's answer is not fed to your model as a second answer. Read it back
+from the advisor's document context if you want it:
+
+```java
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
+
+ChatClientResponse response = ChatClient.builder(chatModel).build()
+    .prompt()
+    .advisors(RetrievalAugmentationAdvisor.builder().documentRetriever(answering).build())
+    .user("What is the capital of Jordan?")
+    .call()
+    .chatClientResponse();
+List<Document> used = (List<Document>) response.context().get(RetrievalAugmentationAdvisor.DOCUMENT_CONTEXT);
+Object goodmemAnswer = used.isEmpty() ? null : used.get(0).getMetadata().get("goodmem_abstract_reply");
+```
+
+Each search with an `llmId` also runs GoodMem's LLM, so on a retriever that only feeds
+the advisor, leave it unset unless you use that answer. A search that finds nothing
+returns no `Document` to carry it; the tool still returns `abstractReply` if the LLM
+answered.
+
+**When the LLM fails**, the search does not. The server reports `SUMMARIZATION_FAILED`
+(and `NOT_FOUND` first, for an `llmId` that names no LLM); the hits come back as usual,
+with `partial`/`goodmem_partial` `true`, both statuses, and no `abstractReply`. Measured
+live: a missing LLM gave `[NOT_FOUND, SUMMARIZATION_FAILED]` and all three hits; an LLM
+whose provider refused (HTTP 429, no credits) gave `[SUMMARIZATION_FAILED]` and all three
+hits. An LLM does not rerank: scores and `goodmem_score_kind` are exactly what they would
+be without it, and a missing LLM leaves a working reranker's scores alone.
+
+An `llmId` that is not a UUID makes `build()` throw `IllegalArgumentException`, before
+any request is made.
 
 ### Metadata filters
 
@@ -166,7 +232,7 @@ Every id argument (`spaceId`, `memoryId`, `embedderId`) must be a UUID. Anything
 is refused with `success=false` before any request is made, because the SDK puts ids
 into URL paths and resolves `..` in them: in 0.2.0, `goodmem_delete_memory` given
 `../spaces/<uuid>` sent `DELETE /v1/spaces/<uuid>` and reported success. The same check
-applies to the retriever's `spaceId` and `rerankerId`, where `build()` throws
+applies to the retriever's `spaceId`, `rerankerId` and `llmId`, where `build()` throws
 `IllegalArgumentException`.
 
 ```java
@@ -220,11 +286,12 @@ reproduced live before it was made; see `CHANGELOG.md`.
 These are the commands CI runs.
 
 ```bash
-./mvnw -B verify                       # JDK 21+; 211 offline tests, the 9 live ones skip without credentials
+./mvnw -B verify                       # JDK 21+; 241 offline tests, the 11 live ones skip without credentials
 
 GOODMEM_BASE_URL=https://localhost:8080 \
 GOODMEM_API_KEY=gm_... \
 GOODMEM_EMBEDDER_ID=your-embedder-uuid \
+GOODMEM_LLM_ID=your-llm-uuid \
 GOODMEM_VERIFY_SSL=false \
   ./mvnw -B verify                     # also runs the live tests; they delete what they create
 ```
@@ -234,8 +301,9 @@ CI runs the same `verify` on JDK 21, plus two gates: no committed GoodMem API ke
 verification in this README or in `examples/` — the quickstart must not teach it.
 
 The offline tests drive the real SDK over a WireMock server, with event shapes captured
-from a live GoodMem v1.0.320 (`src/test/resources/*.ndjson`: a plain search, a working
-reranker, and a missing reranker's vector fallback). Nothing in the connector or the
+from a live GoodMem (`src/test/resources/*.ndjson`: a plain search, a working
+reranker, a missing reranker's vector fallback, an LLM's answer, a missing LLM, an LLM
+whose provider refused, and a working reranker with a missing LLM). Nothing in the connector or the
 SDK is stubbed. `GoodMemIdPathTraversalTests` sends every id-taking entry point
 fourteen traversal and malformed ids (`../spaces/<uuid>`, `%2e%2e/…`, `<uuid>?x=1`, …)
 against a plain JDK HTTP server that records each request line as it arrived, and

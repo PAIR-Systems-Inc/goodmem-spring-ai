@@ -60,7 +60,17 @@ import org.springframework.util.Assert;
  * those are {@code vector}, negated like any vector score, and flagged partial.
  *
  * <p>
- * Space and reranker ids must be UUIDs; {@link Builder#build()} throws
+ * An LLM is opt-in and set by the developer ({@link Builder#llmId}); GoodMem then writes
+ * a grounded answer from the retrieved chunks and every returned {@link Document}
+ * carries it in {@code goodmem_abstract_reply}. It stays out of the prompt: Spring AI's
+ * {@code ContextualQueryAugmenter} formats documents by their text, and the
+ * {@code RetrievalAugmentationAdvisor}'s own chat model writes the answer. An LLM that
+ * fails is reported like any other problem ({@code SUMMARIZATION_FAILED}, and
+ * {@code NOT_FOUND} for a missing LLM): the hits come back, flagged partial, with no
+ * reply. An LLM does not rerank, so scores are unaffected.
+ *
+ * <p>
+ * Space, reranker and LLM ids must be UUIDs; {@link Builder#build()} throws
  * {@link IllegalArgumentException} for anything else, before any request is made.
  */
 public final class GoodMemDocumentRetriever implements DocumentRetriever {
@@ -73,6 +83,8 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 
 	public static final String METADATA_STATUSES = "goodmem_statuses";
 
+	public static final String METADATA_ABSTRACT_REPLY = "goodmem_abstract_reply";
+
 	private final GoodMemConnection connection;
 
 	private final List<String> spaceIds;
@@ -80,6 +92,8 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 	private final int topK;
 
 	private final @Nullable String rerankerId;
+
+	private final @Nullable String llmId;
 
 	private final @Nullable String filter;
 
@@ -98,6 +112,7 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 		this.topK = builder.topK;
 		this.rerankerId = (builder.rerankerId != null) ? GoodMemIds.requireUuid(builder.rerankerId, "rerankerId")
 				: null;
+		this.llmId = (builder.llmId != null) ? GoodMemIds.requireUuid(builder.llmId, "llmId") : null;
 		this.filter = (builder.filter != null && !builder.filter.isBlank()) ? builder.filter : null;
 	}
 
@@ -128,6 +143,9 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 			if (!outcome.statuses().isEmpty()) {
 				metadata.put(METADATA_STATUSES, outcome.statuses());
 			}
+			if (outcome.abstractReply() != null) {
+				metadata.put(METADATA_ABSTRACT_REPLY, outcome.abstractReply());
+			}
 			Document.Builder document = Document.builder()
 				.id(hit.chunkId() != null ? hit.chunkId() : hit.memoryId())
 				.text(hit.chunkText())
@@ -151,9 +169,16 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 			.spaceKeys(keys)
 			.requestedSize(this.topK)
 			.fetchMemory(true);
-		if (this.rerankerId != null) {
-			request.postProcessor(new PostProcessor(CHAT_POST_PROCESSOR,
-					Map.of("reranker_id", this.rerankerId, "max_results", this.topK)));
+		if (this.rerankerId != null || this.llmId != null) {
+			Map<String, Object> config = new LinkedHashMap<>();
+			if (this.rerankerId != null) {
+				config.put("reranker_id", this.rerankerId);
+			}
+			if (this.llmId != null) {
+				config.put("llm_id", this.llmId);
+			}
+			config.put("max_results", this.topK);
+			request.postProcessor(new PostProcessor(CHAT_POST_PROCESSOR, config));
 		}
 		RetrieveMemoryStream stream = this.connection.client().memories.retrieve(request.build());
 		// Whether the hits are reranked is decided from the response: a requested reranker
@@ -176,6 +201,8 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 		private int topK = 5;
 
 		private @Nullable String rerankerId;
+
+		private @Nullable String llmId;
 
 		private @Nullable String filter;
 
@@ -204,6 +231,17 @@ public final class GoodMemDocumentRetriever implements DocumentRetriever {
 
 		public Builder rerankerId(@Nullable String rerankerId) {
 			this.rerankerId = rerankerId;
+			return this;
+		}
+
+		/**
+		 * An LLM registered in GoodMem, to write an answer grounded in the retrieved
+		 * chunks. Opt-in: each search then also runs this LLM. The answer is returned in
+		 * {@code goodmem_abstract_reply} on every Document and as {@code abstractReply}
+		 * from {@link GoodMemSearchTool}; the model never chooses the LLM.
+		 */
+		public Builder llmId(@Nullable String llmId) {
+			this.llmId = llmId;
 			return this;
 		}
 
